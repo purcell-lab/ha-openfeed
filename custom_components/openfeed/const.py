@@ -56,6 +56,8 @@ MAX_BACKFILL_DAYS: Final = 365
 # The callback views Home Assistant serves for the browser redirects.
 CALLBACK_PATH: Final = "/api/openfeed/callback"
 CONSENT_PATH: Final = "/api/openfeed/consent"
+# Public app keys, for openfeed's "Hosted JWKS URL" option. Never the DPoP key.
+JWKS_PATH: Final = "/api/openfeed/jwks.json"
 
 # Polling. Energy data is batch refreshed by openfeed every 6 hours and
 # balances are cached for about 15 minutes, so hourly polling is enough to

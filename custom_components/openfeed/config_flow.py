@@ -2,9 +2,11 @@
 
 Setup, in order:
 
-1. user       The integration generates both PS256 keypairs and shows the
-              public JWKS. The user registers an app in the openfeed
-              dashboard, pastes the JWKS, and enters the two IDs it returns.
+1. user       The integration generates both PS256 keypairs and publishes
+              the app public key at JWKS_PATH. The user registers an app in
+              the openfeed dashboard with that Hosted JWKS URL (or pastes the
+              JWKS inline) and enters the App ID. The OAuth2 client ID is
+              always the App ID with an app- prefix, so it is derived.
 2. authorize  External step: a pushed authorisation request, then the
               openfeed sign-in. The callback view validates state and iss,
               and the flow exchanges the code with a DPoP proof.
@@ -61,6 +63,7 @@ from .const import (
     DEFAULT_BACKFILL_DAYS,
     DEFAULT_ISSUER,
     DOMAIN,
+    JWKS_PATH,
     MAX_BACKFILL_DAYS,
     PENDING_KEYS_STORAGE,
     REGISTER_URL,
@@ -84,8 +87,26 @@ from .views import async_register_views, discard_pending, register_pending
 
 _LOGGER = logging.getLogger(__name__)
 
-_CLIENT_ID_RE = re.compile(r"^app-[0-9a-fA-F-]{36}$")
-_APP_ID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
+_UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
+def parse_app_id(value: str) -> str | None:
+    """The App ID from whatever the user pasted.
+
+    Accepts the bare App ID, the app- prefixed OAuth2 client ID, or the app's
+    page URL in the openfeed dashboard. Returns the lower-case UUID, or None.
+    """
+    found = _UUID_RE.findall(value or "")
+    return found[-1].lower() if len(set(f.lower() for f in found)) == 1 else None
+
+
+def client_id_for(app_id: str) -> str:
+    """openfeed's OAuth2 client ID is the App ID with an app- prefix."""
+    return f"app-{app_id}"
+
+
+def jwks_url(base: str) -> str:
+    return f"{base.rstrip('/')}{JWKS_PATH}" if base else ""
 
 
 # Failures that leave the generated keys valid: the user step is shown again
@@ -209,20 +230,18 @@ class OpenfeedConfigFlow(ConfigFlow, domain=DOMAIN):
             errors["base"] = self._retry_error
             self._retry_error = None
         elif user_input is not None:
-            client_id = user_input[CONF_CLIENT_ID].strip()
-            app_id = user_input[CONF_APP_ID].strip()
-            base = user_input[CONF_REDIRECT_BASE].strip().rstrip("/")
-            if not _CLIENT_ID_RE.match(client_id):
-                errors[CONF_CLIENT_ID] = "invalid_client_id"
-            if not _APP_ID_RE.match(app_id):
+            app_id = parse_app_id(user_input[CONF_APP_ID])
+            base = str(user_input.get(CONF_REDIRECT_BASE) or self._default_base()).strip().rstrip("/")
+            if not app_id:
                 errors[CONF_APP_ID] = "invalid_app_id"
             if error := redirect_error(base, bool(user_input.get(CONF_ALLOW_HTTP))):
                 errors[CONF_REDIRECT_BASE] = error
                 self._offer_http = self._offer_http or error == "insecure_url"
             if not errors:
+                assert app_id is not None
                 self._data.update(
                     {
-                        CONF_CLIENT_ID: client_id,
+                        CONF_CLIENT_ID: client_id_for(app_id),
                         CONF_APP_ID: app_id,
                         CONF_REDIRECT_BASE: base,
                         CONF_ISSUER: DEFAULT_ISSUER,
@@ -234,29 +253,30 @@ class OpenfeedConfigFlow(ConfigFlow, domain=DOMAIN):
         app_key = load_private_key(self._data[CONF_APP_KEY])
         jwks = public_jwks(app_key)
         # Prefill what the user entered last time when returning after a failure.
-        if user_input is None and CONF_CLIENT_ID in self._data:
+        if user_input is None and CONF_APP_ID in self._data:
             user_input = {
-                CONF_CLIENT_ID: self._data[CONF_CLIENT_ID],
                 CONF_APP_ID: self._data[CONF_APP_ID],
                 CONF_REDIRECT_BASE: self._data[CONF_REDIRECT_BASE],
                 CONF_INCLUDE_BANKING: SCOPE_BANKING in self._data.get(CONF_SCOPES, []),
             }
+        default_base = self._default_base()
         fields: dict[Any, Any] = {
-            vol.Required(CONF_CLIENT_ID): str,
             vol.Required(CONF_APP_ID): str,
-            vol.Required(CONF_REDIRECT_BASE, default=self._default_base()): str,
             vol.Required(CONF_INCLUDE_BANKING, default=False): bool,
+            vol.Required(CONF_REDIRECT_BASE, default=default_base): str,
         }
         if self._offer_http:
             fields[vol.Optional(CONF_ALLOW_HTTP, default=False)] = bool
         schema = vol.Schema(fields)
         if user_input is not None:
             schema = self.add_suggested_values_to_schema(schema, user_input)
+        base_for_url = str((user_input or {}).get(CONF_REDIRECT_BASE) or default_base).rstrip("/")
         return self.async_show_form(
             step_id="user",
             data_schema=schema,
             description_placeholders={
                 "register_url": REGISTER_URL,
+                "jwks_url": jwks_url(base_for_url) or f"<your Home Assistant URL>{JWKS_PATH}",
                 "jwks": json.dumps(jwks),
                 "kid": jwk_thumbprint(public_jwk(app_key)),
                 "error": self._retry_detail,
