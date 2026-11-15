@@ -17,7 +17,10 @@ from aiohttp import web
 from homeassistant.components import http
 from homeassistant.core import HomeAssistant, callback
 
-from .const import CALLBACK_PATH, CONSENT_PATH, PENDING_KEY
+from homeassistant.helpers.storage import Store
+
+from .const import CALLBACK_PATH, CONF_APP_KEY, CONSENT_PATH, DOMAIN, JWKS_PATH, PENDING_KEY, PENDING_KEYS_STORAGE
+from .crypto import load_private_key, public_jwks
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -104,11 +107,58 @@ class OpenfeedConsentView(http.HomeAssistantView):
         return await _resume(hass, pending.flow_id, user_input)
 
 
+_JWK_CACHE: dict[str, dict[str, str]] = {}
+
+
+def _public_key(pem: str) -> dict[str, str]:
+    """The public JWK for an app key PEM, cached so each request stays cheap."""
+    if pem not in _JWK_CACHE:
+        _JWK_CACHE[pem] = public_jwks(load_private_key(pem))["keys"][0]
+    return _JWK_CACHE[pem]
+
+
+async def async_public_jwks(hass: HomeAssistant) -> dict[str, list[dict[str, str]]]:
+    """Every app public key in use: configured entries, then an unfinished setup.
+
+    Only the app keypair is published. The DPoP key never leaves Home Assistant.
+    """
+    pems = [e.data[CONF_APP_KEY] for e in hass.config_entries.async_entries(DOMAIN) if e.data.get(CONF_APP_KEY)]
+    pending = await Store(hass, 1, PENDING_KEYS_STORAGE, private=True).async_load()
+    if pending and pending.get(CONF_APP_KEY):
+        pems.append(pending[CONF_APP_KEY])
+    keys: list[dict[str, str]] = []
+    for pem in dict.fromkeys(pems):
+        jwk = await hass.async_add_executor_job(_public_key, pem)
+        keys.append(jwk)
+    return {"keys": keys}
+
+
+class OpenfeedJwksView(http.HomeAssistantView):
+    """Serves the public app keys for openfeed's Hosted JWKS URL option.
+
+    openfeed fetches this on every pushed authorisation request, so a new
+    setup, a re-added entry or a rotated key needs no change in the openfeed
+    dashboard. Public keys only; nothing here is secret.
+    """
+
+    requires_auth = False
+    url = JWKS_PATH
+    name = "api:openfeed:jwks"
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass = request.app[http.KEY_HASS]
+        return web.json_response(
+            await async_public_jwks(hass),
+            headers={"Cache-Control": "no-store"},
+        )
+
+
 @callback
 def async_register_views(hass: HomeAssistant) -> None:
-    """Register both views once per Home Assistant run."""
+    """Register the views once per Home Assistant run."""
     if hass.data.get(f"{PENDING_KEY}_views"):
         return
     hass.http.register_view(OpenfeedCallbackView())
     hass.http.register_view(OpenfeedConsentView())
+    hass.http.register_view(OpenfeedJwksView())
     hass.data[f"{PENDING_KEY}_views"] = True

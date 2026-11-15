@@ -207,20 +207,15 @@ Bank transactions, payment schedules and personal details are not requested.
 
 1. Install the integration (see below). A first Marketplace install needs no restart.
 2. Go to **Settings > Devices & services > Add integration > openfeed Consumer Data Right**.
-3. The first screen shows a public JSON Web Key Set (JWKS). Home Assistant generated the
-   keys; the private keys never leave Home Assistant.
-4. In a new tab, [register an app on openfeed](https://app.openfeed.au/registered-apps/new):
-   - Client authentication: **private_key_jwt**.
-   - Keys: **Inline JWKS JSON**. Paste the JWKS from step 3.
+3. In a new tab, [register an app on openfeed](https://app.openfeed.au/registered-apps/new):
    - Scopes: energy, and banking if you want it.
-5. Copy two values back into Home Assistant:
-   - **OAuth2 client ID**, which starts with `app-`.
-   - **App ID**, the bare UUID.
-6. Check the Home Assistant URL. openfeed sends your browser back to
-   `<url>/api/openfeed/callback`, so it must be reachable from the browser you sign in
-   with. It does not need to be reachable from the internet. See
-   [Nabu Casa and remote access](#nabu-casa-and-remote-access).
-7. Sign in to openfeed, approve the app, then choose the accounts to share.
+   - Keys: **Hosted JWKS URL**. Enter the URL the setup screen shows,
+     `<Home Assistant URL>/api/openfeed/jwks.json`.
+4. Paste the **App ID** into Home Assistant. The `app-` client ID or the app's page URL
+   also works; the client ID is derived from the App ID.
+5. Leave the Home Assistant URL as filled in, unless you sign in from somewhere it does
+   not reach. See [Nabu Casa and remote access](#nabu-casa-and-remote-access).
+6. Sign in to openfeed, approve the app, then choose the accounts to share.
 
 To change which accounts are shared, or the Home Assistant URL, use **Reconfigure** on
 the integration. The existing grant is updated in place rather than a new one created.
@@ -230,13 +225,19 @@ the integration. The existing grant is updated in place rather than a new one cr
 The integration works with Home Assistant Cloud (Nabu Casa), your own domain, or a
 local address only.
 
-- **No inbound connection after setup.** Home Assistant polls `api.openfeed.au`. There
-  is no webhook, so you do not need Nabu Casa webhooks, port forwarding or a public URL
-  for data to flow.
+- **Data is polled.** Home Assistant polls `api.openfeed.au`. There is no webhook, so you
+  do not need Nabu Casa webhooks or port forwarding for data to flow. The only inbound
+  request is openfeed fetching the public key (see **Hosted public key** below).
 - **Sign-in is a browser redirect.** During setup, reauth and reconfigure, openfeed sends
   your browser back to `<Home Assistant URL>/api/openfeed/callback` and
-  `/api/openfeed/consent/<state>`. openfeed's servers never call Home Assistant, so the
-  URL only has to work in the browser you use.
+  `/api/openfeed/consent/<state>`. These redirects only have to work in the browser you use.
+- **Hosted public key.** Home Assistant serves the app's public key at
+  `/api/openfeed/jwks.json`, and openfeed fetches it on each sign-in request. Only the
+  public half of the app key is published; the private keys and the DPoP key never
+  leave Home Assistant. Re-adding the integration or a new key needs no change in
+  openfeed. This URL has to be reachable from the internet (Nabu Casa or your own
+  domain). Without one, use the **No public URL?** option on the setup screen and paste the JWKS
+  inline instead; you then paste it again whenever the integration is re-added.
 - **No redirect URI to register.** openfeed takes the redirect URI from each signed
   pushed authorisation request, so the app registration has no redirect field and any
   URL works.

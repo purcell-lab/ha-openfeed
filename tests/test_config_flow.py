@@ -96,7 +96,7 @@ async def _start(hass: HomeAssistant, banking: bool = False):
     assert '"d"' not in result["description_placeholders"]["jwks"]
     return await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {"client_id": CLIENT_ID, "app_id": APP_ID, "redirect_base": "https://ha.example",
+        {"app_id": APP_ID, "redirect_base": "https://ha.example",
          "include_banking": banking},
     )
 
@@ -174,10 +174,9 @@ async def test_invalid_ids_show_errors(hass: HomeAssistant, openfeed) -> None:
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {"client_id": APP_ID, "app_id": CLIENT_ID, "redirect_base": "ha.local", "include_banking": False},
+        {"app_id": "not-an-id", "redirect_base": "ha.local", "include_banking": False},
     )
-    assert result["errors"] == {"client_id": "invalid_client_id", "app_id": "invalid_app_id",
-                                "redirect_base": "invalid_url"}
+    assert result["errors"] == {"app_id": "invalid_app_id", "redirect_base": "invalid_url"}
 
 
 async def test_reauth_replaces_existing_grant(hass: HomeAssistant, openfeed, key_pems) -> None:
@@ -251,7 +250,7 @@ def test_redirect_error(base, allow, expected) -> None:
 async def test_plain_http_needs_explicit_opt_in(hass: HomeAssistant, openfeed, caplog) -> None:
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
     assert "allow_insecure_redirect" not in result["data_schema"].schema
-    user = {"client_id": CLIENT_ID, "app_id": APP_ID, "redirect_base": "http://homeassistant.local:8123",
+    user = {"app_id": APP_ID, "redirect_base": "http://homeassistant.local:8123",
             "include_banking": False}
     result = await hass.config_entries.flow.async_configure(result["flow_id"], user)
     assert result["errors"] == {"redirect_base": "insecure_url"}
@@ -302,10 +301,10 @@ async def test_retry_after_failure_keeps_keys_and_values(hass: HomeAssistant, op
     assert result["description_placeholders"]["kid"] in _jwks(result)
     # The form comes back with what the user typed.
     suggested = {str(k): k.description for k in result["data_schema"].schema}
-    assert suggested["client_id"] == {"suggested_value": CLIENT_ID}
+    assert suggested["app_id"] == {"suggested_value": APP_ID}
     # The second attempt completes with the same keys.
     result = await hass.config_entries.flow.async_configure(
-        flow_id, {"client_id": CLIENT_ID, "app_id": APP_ID, "redirect_base": "https://ha.example",
+        flow_id, {"app_id": APP_ID, "redirect_base": "https://ha.example",
                   "include_banking": False})
     assert result["type"] is FlowResultType.EXTERNAL_STEP
     result = await hass.config_entries.flow.async_configure(
@@ -344,3 +343,64 @@ async def test_par_failure_returns_to_form(hass: HomeAssistant, openfeed, aiocli
     result = await _start(hass)
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "invalid_client"}
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (APP_ID, APP_ID),
+        (CLIENT_ID, APP_ID),
+        (APP_ID.upper(), APP_ID),
+        (f"  https://app.openfeed.au/registered-apps/{APP_ID}  ", APP_ID),
+        ("not-an-id", None),
+        ("", None),
+        (f"{APP_ID} 11111111-2222-3333-4444-555555555555", None),
+    ],
+)
+def test_parse_app_id(value, expected) -> None:
+    from custom_components.openfeed.config_flow import parse_app_id
+
+    assert parse_app_id(value) == expected
+
+
+async def test_client_id_derived_from_app_id(hass: HomeAssistant, openfeed) -> None:
+    """Pasting the client ID (or the page URL) still gives the right IDs."""
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    assert set(map(str, result["data_schema"].schema)) == {"app_id", "include_banking", "redirect_base"}
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"app_id": f"https://app.openfeed.au/registered-apps/{APP_ID}", "redirect_base": "https://ha.example",
+         "include_banking": False},
+    )
+    assert result["type"] is FlowResultType.EXTERNAL_STEP
+    assert result["url"] == f"{ISSUER}/auth?client_id={CLIENT_ID}&request_uri=urn%3Apar%3A1"
+
+
+async def test_form_shows_hosted_jwks_url(hass: HomeAssistant, openfeed) -> None:
+    await hass.config.async_update(external_url="https://ha.example")
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    assert result["description_placeholders"]["jwks_url"] == "https://ha.example/api/openfeed/jwks.json"
+
+
+async def test_jwks_view_serves_public_app_keys(
+    hass: HomeAssistant, openfeed, key_pems, hass_client_no_auth
+) -> None:
+    """The hosted JWKS lists the unfinished setup's and each entry's app key, never a private part or DPoP key."""
+    from custom_components.openfeed.crypto import load_private_key, public_jwks
+
+    entry_app, entry_dpop = key_pems
+    MockConfigEntry(
+        domain=DOMAIN, unique_id="x",
+        data={"client_id": CLIENT_ID, "app_id": APP_ID, "app_key_pem": entry_app, "dpop_key_pem": entry_dpop},
+    ).add_to_hass(hass)
+    await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    client = await hass_client_no_auth()
+    resp = await client.get("/api/openfeed/jwks.json")
+    assert resp.status == 200
+    assert resp.headers["Cache-Control"] == "no-store"
+    body = await resp.json()
+    kids = [k["kid"] for k in body["keys"]]
+    assert public_jwks(load_private_key(entry_app))["keys"][0]["kid"] in kids
+    assert public_jwks(load_private_key(entry_dpop))["keys"][0]["kid"] not in kids
+    assert all(set(k) == {"kty", "n", "e", "kid", "use", "alg"} for k in body["keys"])
+    assert len(kids) == len(set(kids))

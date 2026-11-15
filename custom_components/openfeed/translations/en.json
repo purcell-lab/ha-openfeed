@@ -3,16 +3,17 @@
     "step": {
       "user": {
         "title": "Connect openfeed",
-        "description": "Home Assistant has generated a keypair for this integration. The private key stays in Home Assistant, and the same key is reused if you start setup again, so you only paste it into openfeed once. Its key ID is `{kid}`.\n\n1. Register an app at [openfeed]({register_url}). Request the energy scope, and the banking scope if you want bank balances.\n2. Choose **Inline JWKS JSON** and paste this public key set:\n\n```\n{jwks}\n```\n\n3. Enter the **OAuth2 client ID** (starts with `app-`) and the **App ID** (bare UUID) that openfeed returns.\n\nThe Home Assistant URL must be reachable from the browser you sign in with. openfeed returns you to it after sign-in and consent.",
+        "description": "1. [Register an app at openfeed]({register_url}). Tick the energy scope, and banking if you want bank balances.\n2. Under keys, choose **Hosted JWKS URL** and enter:\n\n`{jwks_url}`\n\n3. Save, then paste the App ID (or the app's page URL) below.\n\nHome Assistant keeps the private key and publishes only the public key at that URL, so re-adding or rotating keys needs no change in openfeed. The URL must be reachable from the internet (Nabu Casa or your own domain).\n\n**No public URL?** Choose **Paste JWKS JSON** instead and paste this public key set (key ID `{kid}`):\n\n```\n{jwks}\n```\n\nYou will need to paste it again if you remove and re-add the integration.",
         "data": {
-          "client_id": "OAuth2 client ID",
-          "app_id": "App ID",
-          "redirect_base": "Home Assistant URL",
+          "app_id": "openfeed App ID",
           "include_banking": "Also share banking data",
+          "redirect_base": "Home Assistant URL",
           "allow_insecure_redirect": "Allow a plain http:// URL (not recommended)"
         },
         "data_description": {
-          "allow_insecure_redirect": "The sign-in code and the consent return travel unencrypted to a plain http:// address. Only tick this if the browser and Home Assistant share a network you trust. An https URL (Nabu Casa or your own domain) is safer."
+          "allow_insecure_redirect": "The sign-in code and the consent return travel unencrypted to a plain http:// address. Only tick this if the browser and Home Assistant share a network you trust. An https URL (Nabu Casa or your own domain) is safer.",
+          "app_id": "Shown on the app's page in openfeed. The OAuth2 client ID or the page URL also works.",
+          "redirect_base": "Where openfeed returns your browser after sign-in, and where it fetches the public key. Usually leave as is."
         }
       },
       "reauth_confirm": {
@@ -38,11 +39,10 @@
       "consent": "Choose which accounts to share in the openfeed window, then return here."
     },
     "error": {
-      "invalid_client_id": "The OAuth2 client ID starts with app- followed by a UUID.",
-      "invalid_app_id": "The App ID is a bare UUID, without the app- prefix.",
+      "invalid_app_id": "Paste the App ID from openfeed (a UUID). The OAuth2 client ID or the app page URL also works.",
       "invalid_url": "Enter a full URL, starting with http:// or https://.",
       "insecure_url": "This is a plain http:// address. Secure sign-in (FAPI 2.0) needs https, except for localhost. Use your Nabu Casa or https URL, or tick the box below to allow plain http on a network you trust.",
-      "invalid_client": "openfeed rejected the client. Check the client ID, and that the JWKS shown above is saved on the app, then submit to try again.",
+      "invalid_client": "openfeed rejected the client. Check the App ID, and that the app's key is the Hosted JWKS URL shown above (or the pasted JWKS), then submit to try again.",
       "invalid_scope": "openfeed rejected a scope. Make sure the app registration includes the energy (and banking, if selected) scope, then submit to try again.",
       "par_failed": "openfeed did not accept the sign-in request ({error}). Check the details, then submit to try again.",
       "access_denied": "Sign-in was cancelled. Submit to try again.",
