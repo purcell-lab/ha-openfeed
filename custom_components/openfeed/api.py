@@ -224,6 +224,18 @@ class OpenfeedClient:
     async def banking_balance(self, account_id: str) -> dict[str, Any]:
         return await self.get(f"/v1/banking/accounts/{path_segment(account_id)}/balance")
 
+    async def banking_account(self, account_id: str) -> dict[str, Any] | None:
+        """Account detail (rates, fees). The caller drops the BSB and account number."""
+        return await self.get(f"/v1/banking/accounts/{path_segment(account_id)}")
+
+    async def banking_transactions(
+        self, account_id: str, oldest: str, newest: str
+    ) -> list[dict[str, Any]]:
+        return await self.get_collection(
+            f"/v1/banking/accounts/{path_segment(account_id)}/transactions",
+            {"oldestDate": oldest, "newestDate": newest},
+        )
+
 
 def _map_error(status: int, body: dict[str, Any], text: str) -> OpenfeedApiError:
     code = body.get("code") or body.get("error")

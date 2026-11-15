@@ -404,3 +404,23 @@ async def test_jwks_view_serves_public_app_keys(
     assert public_jwks(load_private_key(entry_dpop))["keys"][0]["kid"] not in kids
     assert all(set(k) == {"kty", "n", "e", "kid", "use", "alg"} for k in body["keys"])
     assert len(kids) == len(set(kids))
+
+
+async def test_options_offer_bank_transactions_only_with_banking(hass: HomeAssistant) -> None:
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.openfeed.const import DOMAIN
+
+    energy_only = MockConfigEntry(domain=DOMAIN, data={"scopes": ["openfeed-au:data:energy:read"]})
+    energy_only.add_to_hass(hass)
+    result = await hass.config_entries.options.async_init(energy_only.entry_id)
+    assert "bank_transactions" not in {str(k) for k in result["data_schema"].schema}
+
+    banking = MockConfigEntry(domain=DOMAIN, data={"scopes": [
+        "openfeed-au:data:energy:read", "openfeed-au:data:banking:read"]})
+    banking.add_to_hass(hass)
+    result = await hass.config_entries.options.async_init(banking.entry_id)
+    assert "bank_transactions" in {str(k) for k in result["data_schema"].schema}
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"backfill_days": 60, "sidebar_dashboard": True, "bank_transactions": True})
+    assert banking.options["bank_transactions"] is True

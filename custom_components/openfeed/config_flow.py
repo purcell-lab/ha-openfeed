@@ -52,6 +52,7 @@ from .const import (
     CONF_CLIENT_ID,
     CONF_DPOP_KEY,
     CONF_GRANT_ID,
+    CONF_BANK_TRANSACTIONS,
     CONF_INCLUDE_BANKING,
     CONF_ISSUER,
     CONF_REDIRECT_BASE,
@@ -490,14 +491,18 @@ class OpenfeedOptionsFlow(OptionsFlow):
             return self.async_create_entry(data=user_input)
         current = self.config_entry.options.get(CONF_BACKFILL_DAYS, DEFAULT_BACKFILL_DAYS)
         sidebar = self.config_entry.options.get(CONF_SIDEBAR_DASHBOARD, True)
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_BACKFILL_DAYS, default=current): vol.All(
-                        vol.Coerce(int), vol.Range(min=1, max=MAX_BACKFILL_DAYS)
-                    ),
-                    vol.Required(CONF_SIDEBAR_DASHBOARD, default=sidebar): bool,
-                }
+        fields: dict[Any, Any] = {
+            vol.Required(CONF_BACKFILL_DAYS, default=current): vol.All(
+                vol.Coerce(int), vol.Range(min=1, max=MAX_BACKFILL_DAYS)
             ),
-        )
+            vol.Required(CONF_SIDEBAR_DASHBOARD, default=sidebar): bool,
+        }
+        # Transaction totals only make sense when banking is shared.
+        if SCOPE_BANKING in self.config_entry.data.get(CONF_SCOPES, []):
+            fields[
+                vol.Required(
+                    CONF_BANK_TRANSACTIONS,
+                    default=self.config_entry.options.get(CONF_BANK_TRANSACTIONS, False),
+                )
+            ] = bool
+        return self.async_show_form(step_id="init", data_schema=vol.Schema(fields))

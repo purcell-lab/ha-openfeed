@@ -52,6 +52,8 @@ DASHBOARD_URL_PATH: Final = "openfeed"
 CONF_BACKFILL_DAYS: Final = "backfill_days"
 DEFAULT_BACKFILL_DAYS: Final = 60
 MAX_BACKFILL_DAYS: Final = 365
+# Opt in: fetch bank transactions and keep monthly and 30-day totals only.
+CONF_BANK_TRANSACTIONS: Final = "bank_transactions"
 
 # The callback views Home Assistant serves for the browser redirects.
 CALLBACK_PATH: Final = "/api/openfeed/callback"
@@ -73,6 +75,8 @@ USAGE_WINDOW_DAYS: Final = 30
 # Account detail (plans), invoices and billing change slowly.
 ACCOUNT_DETAIL_REFRESH_HOURS: Final = 24
 BILLING_REFRESH_HOURS: Final = 6
+# openfeed batch-refreshes banking data every 4 hours.
+BANK_TRANSACTIONS_REFRESH_HOURS: Final = 4
 
 PENDING_KEY: Final = f"{DOMAIN}_pending"
 # Keys generated for a setup that has not finished yet, kept so a retry

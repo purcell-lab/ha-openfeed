@@ -154,6 +154,10 @@ def _mock_api(aioclient_mock, revoked: bool = False, private: bool = False,
     aioclient_mock.get(f"{API}/v1/banking/accounts", json={"data": [{"accountId": "B1=", "displayName": "Everyday"}]})
     aioclient_mock.get(f"{API}/v1/banking/accounts/B1=/balance", status=403,
                        json={"code": "balance_unavailable"})
+    aioclient_mock.get(f"{API}/v1/banking/accounts/B1=", json={"data": {
+        "accountId": "B1=", "displayName": "Everyday", "bsb": "062917", "accountNumber": "98765432",
+        "depositRates": [{"rate": "0.0125", "rateType": "VARIABLE"},
+                         {"rate": "0.04", "rateType": "BONUS"}]}})
 
 
 async def test_setup_creates_sensors_and_statistics(hass, entry, aioclient_mock) -> None:
@@ -648,3 +652,51 @@ async def test_new_entry_keeps_nmi_out_of_ids_and_names(hass, entry, aioclient_m
     await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
     assert entry.data["meter_key_salt"] == salt
+
+
+async def test_bank_detail_sensors_without_transactions(hass, entry, aioclient_mock) -> None:
+    _mock_api(aioclient_mock)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    states = {s.entity_id: s for s in hass.states.async_all("sensor")}
+    rate = states["sensor.bank_everyday_interest_rate"]
+    assert float(rate.state) == 1.25
+    assert rate.attributes["rate_kind"] == "deposit"
+    assert [r["rate"] for r in rate.attributes["all_rates"]] == [1.25, 4.0]
+    # Transactions are opt in: no totals and no request without the option.
+    assert "sensor.bank_everyday_month_to_date_money_in" not in states
+    assert not any("/transactions" in str(call[1]) for call in aioclient_mock.mock_calls)
+    # The unmasked BSB and account number never reach a state or attribute.
+    for state in states.values():
+        assert "062917" not in str(state.attributes) and "98765432" not in str(state.attributes)
+
+
+async def test_bank_transaction_totals_opt_in(hass, entry, aioclient_mock) -> None:
+    from custom_components.openfeed.diagnostics import async_get_config_entry_diagnostics
+
+    hass.config_entries.async_update_entry(entry, options={"backfill_days": 3, "bank_transactions": True})
+    _mock_api(aioclient_mock)
+    today = dt_util.now(AEST).date()
+    aioclient_mock.get(f"{API}/v1/banking/accounts/B1=/transactions", json={"data": [
+        {"transactionId": "t1", "accountId": "B1=", "amount": "4321.00",
+         "transactionDate": today.isoformat(), "transactionType": "TRANSFER_INCOMING",
+         "status": "POSTED", "description": "Pay from employer"},
+        {"transactionId": "t2", "accountId": "B1=", "amount": "-30.00",
+         "transactionDate": today.isoformat(), "transactionType": "PAYMENT",
+         "status": "POSTED", "merchantName": "Corner Store"},
+        {"transactionId": "t3", "accountId": "B1=", "amount": "-2.50",
+         "transactionDate": today.isoformat(), "transactionType": "FEE", "status": "POSTED"},
+    ]})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    states = {s.entity_id: s for s in hass.states.async_all("sensor")}
+    assert float(states["sensor.bank_everyday_month_to_date_money_in"].state) == 4321.0
+    assert float(states["sensor.bank_everyday_month_to_date_money_out"].state) == 32.5
+    assert float(states["sensor.bank_everyday_last_30_days_money_in"].state) == 4321.0
+    assert float(states["sensor.bank_everyday_month_to_date_fees"].state) == 2.5
+    assert float(states["sensor.bank_everyday_month_to_date_interest"].state) == 0.0
+    text = str([s.attributes for s in states.values()])
+    assert "employer" not in text and "Corner Store" not in text
+    diag = str(await async_get_config_entry_diagnostics(hass, entry))
+    for secret in ("employer", "Corner Store", "062917", "98765432", "4321.0"):
+        assert secret not in diag

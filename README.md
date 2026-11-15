@@ -62,6 +62,10 @@ data and asks you to reconnect.
 | Usage history held | `sensor.<meter>_usage_history` (days, with oldest date and every statistic ID) | With usage |
 | Substituted intervals | `sensor.<meter>_substituted_intervals` | With usage |
 | Bank current and available balance (optional) | `sensor.bank_<account>_*_balance` | Live, cached up to 15 minutes |
+| Bank credit limit (cards and loans that report one) | `sensor.bank_<account>_credit_limit` | Live, with the balance |
+| Bank interest rate | `sensor.bank_<account>_interest_rate` (%, base rate; every rate and type as attributes) | Daily |
+| Bank money in and out (opt in) | `sensor.bank_<account>_month_to_date_money_in`, `_money_out`, `_last_30_days_money_in`, `_money_out` | Every 4 hours |
+| Bank interest and fees (opt in) | `sensor.bank_<account>_month_to_date_interest` (net), `_month_to_date_fees` | Every 4 hours |
 
 Add the three external statistics in **Settings > Dashboards > Energy** under grid
 consumption and return to grid. The first load imports 60 days of history (change it in
@@ -201,7 +205,18 @@ contact the network directly. Your retailer cannot edit it.
 | `openfeed-au:data:energy:read` | Accounts, plans, balances, billing, invoices, meters, usage and DER |
 | `openfeed-au:data:banking:read` | Only when you tick "Also share banking data" |
 
-Bank transactions, payment schedules and personal details are not requested.
+Payment schedules and personal details are not requested.
+
+**Banking data.** With banking shared, each bank account gets its balances, credit limit
+(where the bank reports one) and headline interest rate. The account detail call returns
+the unmasked BSB and account number; the integration drops both on arrival, so they never
+reach an entity, the log or diagnostics.
+
+Transactions are off by default. Turn on **Summarise bank transactions** in the
+integration options to add money in, money out, interest and fee totals for this month
+and the last 30 days. Only totals are kept in memory. Descriptions, payees, merchants and
+references are never stored, and no transaction statistics are written to the recorder.
+Pending transactions are counted but not summed, because they can still change.
 
 ## Setup
 

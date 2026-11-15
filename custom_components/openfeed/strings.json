@@ -78,10 +78,12 @@
         "title": "openfeed options",
         "data": {
           "backfill_days": "Days of usage to import on first load",
-          "sidebar_dashboard": "Show the openfeed dashboard in the sidebar"
+          "sidebar_dashboard": "Show the openfeed dashboard in the sidebar",
+          "bank_transactions": "Summarise bank transactions (totals only)"
         },
         "data_description": {
-          "sidebar_dashboard": "A read-only dashboard built from this integration's entities and statistics. It updates with each release."
+          "sidebar_dashboard": "A read-only dashboard built from this integration's entities and statistics. It updates with each release.",
+          "bank_transactions": "Needs banking shared. Adds money in, money out, interest and fee totals for each bank account. Only totals are kept; descriptions, payees and references are never stored."
         }
       }
     }
@@ -228,6 +230,30 @@
       },
       "meter_nmi": {
         "name": "NMI"
+      },
+      "banking_credit_limit": {
+        "name": "Credit limit"
+      },
+      "banking_interest_rate": {
+        "name": "Interest rate"
+      },
+      "banking_month_to_date_money_in": {
+        "name": "Month to date money in"
+      },
+      "banking_month_to_date_money_out": {
+        "name": "Month to date money out"
+      },
+      "banking_last_30_days_money_in": {
+        "name": "Last 30 days money in"
+      },
+      "banking_last_30_days_money_out": {
+        "name": "Last 30 days money out"
+      },
+      "banking_month_to_date_interest": {
+        "name": "Month to date interest"
+      },
+      "banking_month_to_date_fees": {
+        "name": "Month to date fees"
       }
     },
     "calendar": {

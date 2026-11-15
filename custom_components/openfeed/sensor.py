@@ -14,6 +14,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import (
+    PERCENTAGE,
     EntityCategory,
     UnitOfApparentPower,
     UnitOfEnergy,
@@ -697,9 +698,14 @@ async def async_setup_entry(
                 if d.key.startswith("der_") and meter.der is None:
                     continue
                 entities.append(MeterSensor(coordinator, account_id, meter_id, d))
-    for account_id in data.banking:
+    for account_id, bank in data.banking.items():
         entities.append(BankingBalanceSensor(coordinator, account_id, "current"))
         entities.append(BankingBalanceSensor(coordinator, account_id, "available"))
+        for bd in BANK_SENSORS:
+            if bd.exists_fn(coordinator, bank):
+                entities.append(BankingSensor(coordinator, account_id, bd))
+            else:
+                stale.append(f"{entry.unique_id}_{account_id}_bank_{bd.key}")
     # Remove entities from earlier versions that this account cannot supply,
     # such as a plan sensor for a retailer that shares no plan.
     for unique_id in stale:
@@ -842,14 +848,7 @@ class BankingBalanceSensor(_Base):
         self._attr_translation_key = f"banking_{kind}_balance"
         account = coordinator.data.banking[account_id].account
         self._attr_unique_id = f"{coordinator.config_entry.unique_id}_{account_id}_bank_{kind}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"bank_{account_id}")},
-            name=f"{account.get('providerName', 'Bank')} {account.get('displayName', '')}".strip(),
-            manufacturer=account.get("providerName"),
-            model=account.get("productName") or "Banking account (CDR)",
-            entry_type=DeviceEntryType.SERVICE,
-            configuration_url=DASHBOARD_URL,
-        )
+        self._attr_device_info = bank_device_info(account_id, account)
 
     @property
     def _item(self) -> BankingAccountData | None:
@@ -883,3 +882,185 @@ class BankingBalanceSensor(_Base):
             "credit_limit": (item.balance or {}).get("creditLimit"),
             "status": item.balance_status,
         }
+
+
+# Banking account sensors ---------------------------------------------------
+
+
+def bank_device_info(account_id: str, account: dict[str, Any]) -> DeviceInfo:
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"bank_{account_id}")},
+        name=f"{account.get('providerName', 'Bank')} {account.get('displayName', '')}".strip(),
+        manufacturer=account.get("providerName"),
+        model=account.get("productName") or "Banking account (CDR)",
+        entry_type=DeviceEntryType.SERVICE,
+        configuration_url=DASHBOARD_URL,
+    )
+
+
+@dataclass(frozen=True, kw_only=True)
+class BankSensorDescription(SensorEntityDescription):
+    value_fn: Callable[[BankingAccountData], Any]
+    attrs_fn: Callable[[BankingAccountData], dict[str, Any]] = lambda _b: {}
+    # Only create the entity when this returns True at setup.
+    exists_fn: Callable[[OpenfeedCoordinator, BankingAccountData], bool] = lambda _c, _b: True
+    # Money in the account currency (else the description's own unit).
+    money: bool = False
+
+
+def _flows(fn: Callable[[Any], Any]) -> Callable[[BankingAccountData], Any]:
+    return lambda b: fn(b.flows) if b.flows else None
+
+
+def _flow_attrs(b: BankingAccountData) -> dict[str, Any]:
+    f = b.flows
+    return {
+        "status": b.flows_status,
+        "fetched_at": b.flows_fetched_at.isoformat() if b.flows_fetched_at else None,
+        "month_start": f.month_start.isoformat() if f and f.month_start else None,
+        "latest_transaction_date": f.latest_day.isoformat() if f and f.latest_day else None,
+        "posted_transactions": f.posted if f else None,
+        "pending_transactions": f.pending if f else None,
+        "skipped_transactions": f.skipped if f else None,
+    }
+
+
+def _wants_flows(c: OpenfeedCoordinator, _b: BankingAccountData) -> bool:
+    return c.bank_transactions
+
+
+def _rate_attrs(b: BankingAccountData) -> dict[str, Any]:
+    r = b.rate
+    detail = b.detail or {}
+    return {
+        "rate_kind": r.kind if r else None,
+        "rate_type": r.rate_type if r else None,
+        "all_rates": list(r.rates) if r else None,
+        "product_name": detail.get("productName") or b.account.get("productName"),
+        "fees_listed": len(detail.get("fees") or []),
+        "detail_status": b.detail_status,
+    }
+
+
+BANK_SENSORS: tuple[BankSensorDescription, ...] = (
+    BankSensorDescription(
+        key="credit_limit",
+        translation_key="banking_credit_limit",
+        device_class=SensorDeviceClass.MONETARY,
+        suggested_display_precision=2,
+        money=True,
+        value_fn=lambda b: _num((b.balance or {}).get("creditLimit")),
+        exists_fn=lambda _c, b: _num((b.balance or {}).get("creditLimit")) is not None,
+    ),
+    BankSensorDescription(
+        key="interest_rate",
+        translation_key="banking_interest_rate",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        value_fn=lambda b: b.rate.rate if b.rate else None,
+        attrs_fn=_rate_attrs,
+        exists_fn=lambda _c, b: b.rate is not None,
+    ),
+    BankSensorDescription(
+        key="month_to_date_money_in",
+        translation_key="banking_month_to_date_money_in",
+        device_class=SensorDeviceClass.MONETARY,
+        suggested_display_precision=2,
+        money=True,
+        value_fn=_flows(lambda f: f.month_in),
+        attrs_fn=_flow_attrs,
+        exists_fn=_wants_flows,
+    ),
+    BankSensorDescription(
+        key="month_to_date_money_out",
+        translation_key="banking_month_to_date_money_out",
+        device_class=SensorDeviceClass.MONETARY,
+        suggested_display_precision=2,
+        money=True,
+        value_fn=_flows(lambda f: f.month_out),
+        attrs_fn=lambda b: {**_flow_attrs(b), "month_by_type": b.flows.by_type if b.flows else None},
+        exists_fn=_wants_flows,
+    ),
+    BankSensorDescription(
+        key="last_30_days_money_in",
+        translation_key="banking_last_30_days_money_in",
+        device_class=SensorDeviceClass.MONETARY,
+        suggested_display_precision=2,
+        money=True,
+        value_fn=_flows(lambda f: f.last_30_in),
+        exists_fn=_wants_flows,
+    ),
+    BankSensorDescription(
+        key="last_30_days_money_out",
+        translation_key="banking_last_30_days_money_out",
+        device_class=SensorDeviceClass.MONETARY,
+        suggested_display_precision=2,
+        money=True,
+        value_fn=_flows(lambda f: f.last_30_out),
+        exists_fn=_wants_flows,
+    ),
+    BankSensorDescription(
+        key="month_to_date_interest",
+        translation_key="banking_month_to_date_interest",
+        device_class=SensorDeviceClass.MONETARY,
+        suggested_display_precision=2,
+        money=True,
+        # Net interest: paid to you minus charged to you.
+        value_fn=_flows(lambda f: round(f.month_interest_paid - f.month_interest_charged, 2)),
+        attrs_fn=lambda b: {
+            "interest_paid": b.flows.month_interest_paid if b.flows else None,
+            "interest_charged": b.flows.month_interest_charged if b.flows else None,
+        },
+        exists_fn=_wants_flows,
+    ),
+    BankSensorDescription(
+        key="month_to_date_fees",
+        translation_key="banking_month_to_date_fees",
+        device_class=SensorDeviceClass.MONETARY,
+        suggested_display_precision=2,
+        money=True,
+        value_fn=_flows(lambda f: f.month_fees),
+        exists_fn=_wants_flows,
+    ),
+)
+
+
+class BankingSensor(_Base):
+    entity_description: BankSensorDescription
+
+    def __init__(self, coordinator: OpenfeedCoordinator, account_id: str,
+                 description: BankSensorDescription) -> None:
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._account_id = account_id
+        bank = coordinator.data.banking[account_id]
+        self._attr_unique_id = (
+            f"{coordinator.config_entry.unique_id}_{account_id}_bank_{description.key}"
+        )
+        self._attr_device_info = bank_device_info(account_id, bank.account)
+        if description.money:
+            self._attr_native_unit_of_measurement = (bank.balance or {}).get("currency") or "AUD"
+
+    @property
+    def _item(self) -> BankingAccountData | None:
+        return self.coordinator.data.banking.get(self._account_id)
+
+    @property
+    def available(self) -> bool:
+        item = self._item
+        return (
+            super().available
+            and item is not None
+            and self.entity_description.value_fn(item) is not None
+        )
+
+    @property
+    def native_value(self) -> Any:
+        item = self._item
+        return None if item is None else self.entity_description.value_fn(item)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        item = self._item
+        return {} if item is None else self.entity_description.attrs_fn(item)
