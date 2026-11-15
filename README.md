@@ -236,7 +236,7 @@ local address only.
   public half of the app key is published; the private keys and the DPoP key never
   leave Home Assistant. Re-adding the integration or a new key needs no change in
   openfeed. This URL has to be reachable from the internet (Nabu Casa or your own
-  domain). Without one, open **No public URL?** on the setup screen and paste the JWKS
+  domain). Without one, use the **No public URL?** option on the setup screen and paste the JWKS
   inline instead; you then paste it again whenever the integration is re-added.
 - **No redirect URI to register.** openfeed takes the redirect URI from each signed
   pushed authorisation request, so the app registration has no redirect field and any

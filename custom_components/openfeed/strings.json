@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect openfeed",
-        "description": "1. [Register an app at openfeed]({register_url}). Tick the energy scope, and banking if you want bank balances.\n2. Under keys, choose **Hosted JWKS URL** and enter:\n\n`{jwks_url}`\n\n3. Save, then paste the App ID (or the app's page URL) below.\n\nHome Assistant keeps the private key and publishes only the public key at that URL, so re-adding or rotating keys needs no change in openfeed. The URL must be reachable from the internet (Nabu Casa or your own domain).\n\n<details><summary>No public URL? Paste the key instead</summary>\n\nChoose **Paste JWKS JSON** and paste this public key set (key ID `{kid}`):\n\n```\n{jwks}\n```\n\nYou will need to paste it again if you remove and re-add the integration.\n</details>",
+        "description": "1. [Register an app at openfeed]({register_url}). Tick the energy scope, and banking if you want bank balances.\n2. Under keys, choose **Hosted JWKS URL** and enter:\n\n`{jwks_url}`\n\n3. Save, then paste the App ID (or the app's page URL) below.\n\nHome Assistant keeps the private key and publishes only the public key at that URL, so re-adding or rotating keys needs no change in openfeed. The URL must be reachable from the internet (Nabu Casa or your own domain).\n\n**No public URL?** Choose **Paste JWKS JSON** instead and paste this public key set (key ID `{kid}`):\n\n```\n{jwks}\n```\n\nYou will need to paste it again if you remove and re-add the integration.",
         "data": {
           "app_id": "openfeed App ID",
           "include_banking": "Also share banking data",
