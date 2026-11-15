@@ -24,10 +24,13 @@ from .api import (
     TokenRejectedError,
     cancel_on_revocation,
 )
+from .banking import AccountRate, FlowSummary, account_rate, strip_detail, summarise_transactions, window_start
 from .billing import PAYMENTS, REFUNDS, BillingSummary, summarise_billing
 from .const import (
     ACCOUNT_DETAIL_REFRESH_HOURS,
+    BANK_TRANSACTIONS_REFRESH_HOURS,
     BILLING_REFRESH_HOURS,
+    CONF_BANK_TRANSACTIONS,
     CONF_BACKFILL_DAYS,
     CONF_METER_KEY_SALT,
     CONF_METER_KEY_SCHEME,
@@ -127,6 +130,14 @@ class BankingAccountData:
     account: dict[str, Any]
     balance: dict[str, Any] | None = None
     balance_status: str = "ok"
+    # Account detail without the unmasked BSB and account number.
+    detail: dict[str, Any] | None = None
+    detail_status: str = "not_fetched"
+    rate: AccountRate | None = None
+    # Totals from transactions, only when the user opts in.
+    flows: FlowSummary | None = None
+    flows_status: str = "off"
+    flows_fetched_at: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -174,6 +185,10 @@ class OpenfeedCoordinator(DataUpdateCoordinator[OpenfeedData]):
         self._meter_detail_cache: dict[str, tuple[datetime, dict[str, Any] | None]] = {}
         # account ID -> (fetched at, status, summary)
         self._billing_cache: dict[str, tuple[datetime, str, BillingSummary | None]] = {}
+        # bank account ID -> (fetched at, detail without BSB/account number, or None)
+        self._bank_detail_cache: dict[str, tuple[datetime, dict[str, Any] | None]] = {}
+        # bank account ID -> (fetched at, status, totals)
+        self._bank_flow_cache: dict[str, tuple[datetime, str, FlowSummary | None]] = {}
 
     def _ensure_meter_salt(self) -> None:
         """Give a new (non-legacy) entry its meter key salt, once, for good."""
@@ -191,6 +206,11 @@ class OpenfeedCoordinator(DataUpdateCoordinator[OpenfeedData]):
         if data.get(CONF_METER_KEY_SCHEME) == METER_KEY_LEGACY:
             return None
         return data.get(CONF_METER_KEY_SALT)
+
+    @property
+    def bank_transactions(self) -> bool:
+        """True when the user opted in to transaction totals."""
+        return bool(self.config_entry.options.get(CONF_BANK_TRANSACTIONS, False))
 
     @property
     def scopes(self) -> list[str]:
@@ -211,6 +231,8 @@ class OpenfeedCoordinator(DataUpdateCoordinator[OpenfeedData]):
             self._plan_cache.clear()
             self._meter_detail_cache.clear()
             self._billing_cache.clear()
+            self._bank_detail_cache.clear()
+            self._bank_flow_cache.clear()
             self.session.clear_grant()
             raise ConfigEntryAuthFailed(
                 "The openfeed disclosure grant was revoked or has ended"
@@ -250,6 +272,9 @@ class OpenfeedCoordinator(DataUpdateCoordinator[OpenfeedData]):
             for account, balance in zip(accounts, balances, strict=True):
                 item = BankingAccountData(account=account)
                 _apply_balance(item, balance)
+                await self._apply_bank_detail(item)
+                if self.bank_transactions:
+                    await self._apply_bank_flows(item)
                 data.banking[account["accountId"]] = item
         return data
 
@@ -359,6 +384,63 @@ class OpenfeedCoordinator(DataUpdateCoordinator[OpenfeedData]):
             )
         self._billing_cache[account_id] = (now, status, summary)
         item.billing_fetched_at, item.billing_status, item.billing = now, status, summary
+
+    async def _apply_bank_detail(self, item: BankingAccountData) -> None:
+        """Fetch the account detail once a day, for rates and fees."""
+        account_id = item.account["accountId"]
+        now = dt_util.utcnow()
+        cached = self._bank_detail_cache.get(account_id)
+        status = "cache"
+        if cached is None or now - cached[0] >= timedelta(hours=ACCOUNT_DETAIL_REFRESH_HOURS):
+            (detail,) = await cancel_on_revocation(
+                [self.session.client.banking_account(account_id)]
+            )
+            if isinstance(detail, OpenfeedApiError):
+                if not _contained(detail):
+                    raise detail
+                _LOGGER.warning("openfeed bank account detail request failed: %s", detail)
+                status = "error"
+                # Keep the last good detail; try again on the next poll.
+                if cached is None:
+                    item.detail_status = status
+                    return
+            else:
+                cached = (now, strip_detail(detail))
+                self._bank_detail_cache[account_id] = cached
+                status = "ok"
+        item.detail = cached[1]
+        item.detail_status = status
+        item.rate = account_rate(cached[1])
+
+    async def _apply_bank_flows(self, item: BankingAccountData) -> None:
+        """Total recent transactions every few hours. Only totals are kept."""
+        account_id = item.account["accountId"]
+        now = dt_util.utcnow()
+        cached = self._bank_flow_cache.get(account_id)
+        if cached and cached[1] == "ok" and now - cached[0] < timedelta(
+            hours=BANK_TRANSACTIONS_REFRESH_HOURS
+        ):
+            item.flows_fetched_at, item.flows_status, item.flows = cached
+            return
+        today = dt_util.now(AEST).date()
+        (txns,) = await cancel_on_revocation(
+            [
+                self.session.client.banking_transactions(
+                    account_id, window_start(today).isoformat(), today.isoformat()
+                )
+            ]
+        )
+        if isinstance(txns, OpenfeedApiError):
+            if not _contained(txns):
+                raise txns
+            _LOGGER.warning("openfeed bank transactions request failed: %s", txns)
+            if cached and cached[2] is not None:
+                item.flows_fetched_at, item.flows = cached[0], cached[2]
+            item.flows_status = "error"
+            return
+        summary = summarise_transactions(txns, today)
+        self._bank_flow_cache[account_id] = (now, "ok", summary)
+        item.flows_fetched_at, item.flows_status, item.flows = now, "ok", summary
 
     async def _collect_meter(self, account_id: str, meter: dict[str, Any]) -> MeterData:
         meter_id = meter["meterId"]

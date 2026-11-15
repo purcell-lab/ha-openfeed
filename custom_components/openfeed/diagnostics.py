@@ -19,6 +19,7 @@ TO_REDACT = {
     "access_token",
     "refresh_token",
     "accountNumber",
+    "bsb",
     "maskedNumber",
     "nationalMeteringId",
     "accountId",
@@ -119,7 +120,21 @@ async def async_get_config_entry_diagnostics(
             "fetched_at": str(data.fetched_at),
             "energy": energy,
             "banking": {
-                f"account_{i}": {"account": b.account, "balance_status": b.balance_status}
+                f"account_{i}": {
+                    "account": b.account,
+                    "balance_status": b.balance_status,
+                    "detail_status": b.detail_status,
+                    "rate": (
+                        {"kind": b.rate.kind, "rate": b.rate.rate, "rate_type": b.rate.rate_type}
+                        if b.rate
+                        else None
+                    ),
+                    # Status and counts only; no amounts or transaction text.
+                    "flows_status": b.flows_status,
+                    "flows_posted": b.flows.posted if b.flows else None,
+                    "flows_pending": b.flows.pending if b.flows else None,
+                    "flows_skipped": b.flows.skipped if b.flows else None,
+                }
                 for i, b in enumerate(data.banking.values())
             },
             "last_update_success": coordinator.last_update_success,
