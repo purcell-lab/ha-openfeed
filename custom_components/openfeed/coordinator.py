@@ -64,6 +64,8 @@ from .usage import AEST, UsageSummary, summarise, usage_windows
 
 # Keep enough merged daily totals for 30-day and month-to-date sensors.
 HISTORY_KEEP_DAYS = 400
+# Usage request runs kept per meter for diagnostics.
+USAGE_TRACE_RUNS = 6
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -185,6 +187,8 @@ class OpenfeedCoordinator(DataUpdateCoordinator[OpenfeedData]):
         self._meter_detail_cache: dict[str, tuple[datetime, dict[str, Any] | None]] = {}
         # account ID -> (fetched at, status, summary)
         self._billing_cache: dict[str, tuple[datetime, str, BillingSummary | None]] = {}
+        # meter ID -> the last few usage requests, newest last, for support
+        self.usage_trace: dict[str, list[dict[str, Any]]] = {}
         # bank account ID -> (fetched at, detail without BSB/account number, or None)
         self._bank_detail_cache: dict[str, tuple[datetime, dict[str, Any] | None]] = {}
         # bank account ID -> (fetched at, status, totals)
@@ -489,14 +493,40 @@ class OpenfeedCoordinator(DataUpdateCoordinator[OpenfeedData]):
             else int(self.config_entry.options.get(CONF_BACKFILL_DAYS, DEFAULT_BACKFILL_DAYS))
         )
         oldest = today - timedelta(days=days)
+        backfill = md.meter["meterId"] not in self._backfilled
+        run: dict[str, Any] = {
+            "started_at": dt_util.utcnow().isoformat(timespec="seconds"),
+            "kind": "backfill" if backfill else "restate",
+            "oldest_requested": oldest.isoformat(),
+            "newest_requested": today.isoformat(),
+            "windows": [],
+        }
+        runs = self.usage_trace.setdefault(md.meter["meterId"], [])
+        runs.append(run)
+        del runs[:-USAGE_TRACE_RUNS]
         records: list[dict[str, Any]] = []
         for start, end in usage_windows(oldest, today, USAGE_WINDOW_DAYS):
-            records.extend(
-                await self.session.client.energy_usage(
-                    md.account_id, md.meter["meterId"], start.isoformat(), end.isoformat()
-                )
+            window: dict[str, Any] = {
+                "oldest": start.isoformat(), "newest": end.isoformat(), "requests": []
+            }
+            run["windows"].append(window)
+            got = await self.session.client.energy_usage(
+                md.account_id, md.meter["meterId"], start.isoformat(), end.isoformat(),
+                trace=window["requests"],
             )
+            dates = sorted(str(r.get("intervalDate"))[:10] for r in got if r.get("intervalDate"))
+            window.update(
+                records=len(got),
+                first_interval_date=dates[0] if dates else None,
+                last_interval_date=dates[-1] if dates else None,
+            )
+            _LOGGER.debug(
+                "openfeed usage %s to %s: %d records (%s to %s)",
+                start, end, len(got), window["first_interval_date"], window["last_interval_date"],
+            )
+            records.extend(got)
         summary = summarise(records)
+        run["oldest_returned"] = summary.oldest_day.isoformat() if summary.oldest_day else None
         history = self._daily_history.setdefault(md.meter["meterId"], {})
         cutoff = today - timedelta(days=HISTORY_KEEP_DAYS)
         for series, days_kwh in summary.daily.items():

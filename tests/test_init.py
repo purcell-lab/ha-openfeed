@@ -700,3 +700,21 @@ async def test_bank_transaction_totals_opt_in(hass, entry, aioclient_mock) -> No
     diag = str(await async_get_config_entry_diagnostics(hass, entry))
     for secret in ("employer", "Corner Store", "062917", "98765432", "4321.0"):
         assert secret not in diag
+
+
+async def test_diagnostics_show_usage_requests(hass, entry, aioclient_mock) -> None:
+    from custom_components.openfeed.diagnostics import async_get_config_entry_diagnostics
+
+    _mock_api(aioclient_mock)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+    runs = diag["energy"]["account_0"]["meters"][0]["usage_requests"]
+    assert len(runs) == 1 and runs[0]["kind"] == "backfill"
+    window = runs[0]["windows"][0]
+    assert window["records"] == 2
+    assert window["first_interval_date"] <= window["last_interval_date"]
+    request = window["requests"][0]
+    assert request["status"] == 200 and request["interaction_id"]
+    assert request["endpoint"].startswith("/v1/energy/accounts/{id}/meters/{id}/usage")
+    assert ACC not in str(runs) and METER not in str(runs)

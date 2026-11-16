@@ -135,6 +135,12 @@ openfeed returned, and diagnostics show the oldest invoice and billing transacti
 Home Assistant keeps long-term statistics permanently, so history builds up from the
 day you connect even if openfeed only holds a rolling window.
 
+To see exactly what was asked for and returned, download the integration diagnostics.
+Each meter's `usage_requests` lists the last few usage runs: the date range requested,
+each 30-day window, the records and interval dates returned, and every HTTP page with
+its status, time and `x-fapi-interaction-id`. Account and meter IDs are replaced with
+`{id}`. Quote the interaction IDs when you ask openfeed support about missing history.
+
 Home Assistant long-term statistics are hourly. The energy statistics are hourly sums;
 the power statistics keep the hourly maximum of the meter's own interval reads, so a
 5-minute peak is not lost.
