@@ -153,3 +153,34 @@ def test_same_origin():
     assert not api.same_origin("http://api.openfeed.au/v1/x", "https://api.openfeed.au")
     assert not api.same_origin("https://api.openfeed.au:8443/v1", "https://api.openfeed.au")
     assert not api.same_origin("https://api.openfeed.au.evil.example/v1", "https://api.openfeed.au")
+
+
+def test_endpoint_template_hides_ids() -> None:
+    url = ("https://api.openfeed.au/v1/energy/accounts/LTmp=/meters/Mtr=/usage"
+           "?limit=1000&oldestDate=2026-09-16&newestDate=2026-10-15&offset=1000")
+    assert api.endpoint_template(url) == (
+        "/v1/energy/accounts/{id}/meters/{id}/usage"
+        "?oldestDate=2026-09-16&newestDate=2026-10-15&offset=1000")
+    assert api.endpoint_template("https://api.openfeed.au/v1/energy/accounts") == "/v1/energy/accounts"
+
+
+async def test_usage_trace_records_each_page(fake_server, dpop_key):
+    base = fake_server.url
+    path = "/v1/energy/accounts/a=/meters/m=/usage"
+    fake_server.add("GET", path, json={"data": [{"intervalDate": "2026-11-04"}],
+                                       "links": {"next": f"{base}{path}?offset=1000"}},
+                    headers={"x-fapi-interaction-id": "echo-1"})
+    fake_server.add("GET", path, json={"data": [], "links": {}})
+    trace: list = []
+    async with aiohttp.ClientSession() as session:
+        got = await _client(session, dpop_key, base).energy_usage(
+            "a=", "m=", "2026-09-16", "2026-10-15", trace=trace)
+    assert len(got) == 1
+    assert [t["items"] for t in trace] == [1, 0]
+    assert [t["has_next"] for t in trace] == [True, False]
+    assert trace[0]["endpoint"].startswith("/v1/energy/accounts/{id}/meters/{id}/usage?oldestDate=2026-09-16")
+    assert trace[0]["response_x-fapi-interaction-id"] == "echo-1"
+    # The interaction ID we sent is the one recorded.
+    sent = [r["headers"]["x-fapi-interaction-id"] for r in fake_server.requests]
+    assert [t["interaction_id"] for t in trace] == sent
+    assert len(set(sent)) == 2

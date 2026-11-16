@@ -86,6 +86,9 @@ async def async_get_config_entry_diagnostics(
                         "interval_minutes": usage.interval_minutes,
                     },
                     "usage_fetched_at": str(meter.usage_fetched_at),
+                    # What was asked for and what came back, per window and
+                    # page, with interaction IDs for openfeed support.
+                    "usage_requests": coordinator.usage_trace.get(meter.meter.get("meterId"), []),
                     "usage_status": meter.usage_status,
                     "der_status": meter.der_status,
                     "meters_source": meter.meters_source,
