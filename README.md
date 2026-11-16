@@ -140,6 +140,8 @@ Each meter's `usage_requests` lists the last few usage runs: the date range requ
 each 30-day window, the records and interval dates returned, and every HTTP page with
 its status, time and `x-fapi-interaction-id`. Account and meter IDs are replaced with
 `{id}`. Quote the interaction IDs when you ask openfeed support about missing history.
+Backfill runs also include `samples`: how many returned days carry readings, plus the raw
+record for the newest day with readings and the newest day without, with IDs removed.
 
 Home Assistant long-term statistics are hourly. The energy statistics are hourly sums;
 the power statistics keep the hourly maximum of the meter's own interval reads, so a

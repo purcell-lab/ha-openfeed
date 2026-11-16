@@ -9,6 +9,7 @@ from custom_components.openfeed.usage import (
     CONTROLLED_LOAD,
     EXPORT,
     cumulative,
+    sample_records,
     summarise,
     usage_windows,
 )
@@ -111,3 +112,27 @@ def test_five_minute_peaks_and_hourly_power() -> None:
     # (7.2 + 3) kW over twelve 5-minute slots.
     assert round(mean, 3) == round(10.2 / 12, 3)
     assert s.oldest_day == day
+
+
+def test_sample_records_picks_good_and_empty_days_without_ids():
+    records = [
+        _record("2024-11-14", []),
+        _record("2026-11-03", [0, 0, 0]),
+        _record("2026-11-04", [0.5, 0]),
+        _record("2026-11-05", [0.2]),
+    ]
+    out = sample_records(records)
+    assert out["days"] == 4
+    assert out["days_with_readings"] == 2 and out["days_without_readings"] == 2
+    assert out["oldest_day_with_readings"] == "2026-11-04"
+    assert out["newest_day_without_readings"] == "2026-11-03"
+    assert out["data_day"]["intervalDate"] == "2026-11-05"
+    assert out["empty_day"]["intervalDate"] == "2026-11-03"
+    assert out["empty_day"]["reads"][0]["intervalRead"]["intervalReads"] == [0, 0, 0]
+    assert "M1" not in str(out)
+    assert out["data_day"]["meterId"] == "{id}"
+
+
+def test_sample_records_empty():
+    out = sample_records([])
+    assert out["data_day"] is None and out["empty_day"] is None and out["days"] == 0

@@ -718,3 +718,5 @@ async def test_diagnostics_show_usage_requests(hass, entry, aioclient_mock) -> N
     assert request["status"] == 200 and request["interaction_id"]
     assert request["endpoint"].startswith("/v1/energy/accounts/{id}/meters/{id}/usage")
     assert ACC not in str(runs) and METER not in str(runs)
+    samples = runs[0]["samples"]
+    assert samples["days"] >= 1 and (samples["data_day"] or samples["empty_day"])
