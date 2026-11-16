@@ -195,3 +195,47 @@ def cumulative(hourly: dict[datetime, float], base: float) -> list[tuple[datetim
         total += kwh
         rows.append((hour, kwh, total))
     return rows
+
+
+_ID_KEYS = frozenset({"servicePointId", "meterId", "accountId", "nmi", "registerId"})
+
+
+def _scrub(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: ("{id}" if k in _ID_KEYS and v else _scrub(v)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_scrub(v) for v in value]
+    return value
+
+
+def has_readings(record: dict[str, Any]) -> bool:
+    """True if any read in the record carries a non-zero interval value."""
+    for read in record.get("reads") or []:
+        for raw in (read.get("intervalRead") or {}).get("intervalReads") or []:
+            if raw not in (None, 0, 0.0, "0"):
+                return True
+    return False
+
+
+def sample_records(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Pick the newest day with readings and the newest day without any.
+
+    Both records are returned raw apart from identifiers, so openfeed
+    support can compare a good day with an empty one.
+    """
+    by_day: dict[str, dict[str, Any]] = {}
+    for record in records:
+        day = str(record.get("intervalDate") or "")[:10]
+        if day:
+            by_day[day] = record
+    good = [d for d, r in by_day.items() if has_readings(r)]
+    empty = [d for d, r in by_day.items() if not has_readings(r)]
+    return {
+        "days": len(by_day),
+        "days_with_readings": len(good),
+        "days_without_readings": len(empty),
+        "oldest_day_with_readings": min(good) if good else None,
+        "newest_day_without_readings": max(empty) if empty else None,
+        "data_day": _scrub(by_day[max(good)]) if good else None,
+        "empty_day": _scrub(by_day[max(empty)]) if empty else None,
+    }

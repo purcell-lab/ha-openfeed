@@ -60,7 +60,7 @@ from .statistics import (
     meter_label,
     statistic_id,
 )
-from .usage import AEST, UsageSummary, summarise, usage_windows
+from .usage import AEST, UsageSummary, sample_records, summarise, usage_windows
 
 # Keep enough merged daily totals for 30-day and month-to-date sensors.
 HISTORY_KEEP_DAYS = 400
@@ -526,6 +526,8 @@ class OpenfeedCoordinator(DataUpdateCoordinator[OpenfeedData]):
             )
             records.extend(got)
         summary = summarise(records)
+        if backfill:
+            run["samples"] = sample_records(records)
         run["oldest_returned"] = summary.oldest_day.isoformat() if summary.oldest_day else None
         history = self._daily_history.setdefault(md.meter["meterId"], {})
         cutoff = today - timedelta(days=HISTORY_KEEP_DAYS)
