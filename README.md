@@ -59,7 +59,7 @@ data and asks you to reconnect.
 | Month-to-date and last 30 days grid import and export | `sensor.<meter>_month_to_date_grid_*`, `_last_30_days_grid_*` (kWh, full days only) | With usage |
 | Last statement charges and credits | `sensor.<account>_last_statement_charges`, `_credits` (with net and the statistic IDs as attributes) | Every 6 hours |
 | Bills calendar | `calendar.<account>_bills`: one event per invoice, from issue date to due date, with amount and status | Hourly poll |
-| Usage history held | `sensor.<meter>_usage_history` (days, with oldest date and every statistic ID) | With usage |
+| Usage history held | `sensor.<meter>_usage_history` (days of import or export held in long-term statistics, AEST days, with the oldest and latest date and every statistic ID) | With usage |
 | Substituted intervals | `sensor.<meter>_substituted_intervals` | With usage |
 | Bank current and available balance (optional) | `sensor.bank_<account>_*_balance` | Live, cached up to 15 minutes |
 | Bank credit limit (cards and loans that report one) | `sensor.bank_<account>_credit_limit` | Live, with the balance |

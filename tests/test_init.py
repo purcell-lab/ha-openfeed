@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, time as dtime, timedelta
 import time
 
 import pytest
@@ -720,3 +720,31 @@ async def test_diagnostics_show_usage_requests(hass, entry, aioclient_mock) -> N
     assert ACC not in str(runs) and METER not in str(runs)
     samples = runs[0]["samples"]
     assert samples["days"] >= 1 and (samples["data_day"] or samples["empty_day"])
+
+
+async def test_usage_history_counts_long_term_statistics(hass, entry, aioclient_mock) -> None:
+    """The usage history sensor counts days in the recorder, beyond the 400-day summary."""
+    from datetime import UTC
+
+    from custom_components.openfeed.statistics import async_import_meter
+
+    _mock_api(aioclient_mock)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = entry.runtime_data
+    md = next(iter(coordinator.data.energy[ACC].meters.values()))
+    # An hour 500 days back: older than the in-memory summary keeps.
+    old_day = dt_util.now(AEST).date() - timedelta(days=500)
+    old_hour = datetime.combine(old_day, dtime(1), AEST).astimezone(UTC)
+    await async_import_meter(hass, md.key, "openfeed test", {"consumption": {old_hour: 1.0}})
+    # Force the next refresh to re-read usage, which updates the coverage.
+    for cached in coordinator._usage_cache.values():
+        cached.usage_fetched_at = dt_util.utcnow() - timedelta(hours=4)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    history = hass.states.get(f"sensor.meter_{NMI.lower()}_usage_history")
+    assert int(history.state) == 3
+    assert history.attributes["oldest"] == old_day.isoformat()
+    assert history.attributes["source"] == "statistics"
+    assert history.attributes["summary_days"] == 2

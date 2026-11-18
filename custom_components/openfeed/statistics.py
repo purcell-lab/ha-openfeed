@@ -13,7 +13,7 @@ finalised substitute reads overwrite earlier values.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 import hashlib
 import hmac
 import logging
@@ -34,7 +34,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 from .billing import CHARGES, CREDITS, INVOICED, PAYMENTS, REFUNDS
-from .usage import CONSUMPTION, CONTROLLED_LOAD, EXPORT, cumulative
+from .usage import AEST, CONSUMPTION, CONTROLLED_LOAD, EXPORT, cumulative
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -96,6 +96,42 @@ def account_key(account_id: str) -> str:
 
 def statistic_id(key: str, series: str) -> str:
     return f"{DOMAIN}:{key}_{series}"
+
+
+# Statistics are never older than this; the day query starts here.
+_COVERAGE_START = datetime(2000, 1, 1, tzinfo=UTC)
+
+
+async def async_daily_coverage(
+    hass: HomeAssistant, stat_ids: list[str]
+) -> tuple[int, date | None, date | None]:
+    """Days with at least one hourly row in any of stat_ids, and the oldest and latest.
+
+    Reads the long-term statistics, so it counts everything ever imported,
+    not only what the latest refresh returned. Days are AEST (UTC+10) market
+    days, like every other daily figure in the integration.
+    """
+    instance = get_instance(hass)
+    # Let the import just queued reach the database first.
+    await instance.async_block_till_done()
+    rows = await instance.async_add_executor_job(
+        statistics_during_period,
+        hass,
+        _COVERAGE_START,
+        None,
+        set(stat_ids),
+        "hour",
+        None,
+        {"change"},
+    )
+    days = {
+        datetime.fromtimestamp(float(row["start"]), AEST).date()
+        for series in rows.values()
+        for row in series
+    }
+    if not days:
+        return 0, None, None
+    return len(days), min(days), max(days)
 
 
 async def _sum_before(hass: HomeAssistant, stat_id: str, first_hour: datetime) -> float:

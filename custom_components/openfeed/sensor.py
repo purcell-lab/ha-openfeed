@@ -454,11 +454,28 @@ def _period_sensor(series: str, key: str, period: str) -> MeterSensorDescription
     )
 
 
+def _summary_days(m: MeterData) -> set[date]:
+    return {d for v in m.daily_history.values() for d in v}
+
+
+def _history_days(m: MeterData) -> int | None:
+    """Days held in long-term statistics, else the in-memory summary days."""
+    if m.stats_days:
+        return m.stats_days
+    return len(_summary_days(m)) or None
+
+
 def _history_attrs(m: MeterData) -> dict[str, Any]:
-    days = sorted({d for v in m.daily_history.values() for d in v})
+    summary = sorted(_summary_days(m))
+    from_stats = bool(m.stats_days)
+    oldest = m.stats_oldest if from_stats else (summary[0] if summary else None)
+    latest = m.stats_latest if from_stats else (summary[-1] if summary else None)
     return {
-        "oldest": days[0].isoformat() if days else None,
-        "latest": days[-1].isoformat() if days else None,
+        "oldest": oldest.isoformat() if oldest else None,
+        "latest": latest.isoformat() if latest else None,
+        "source": "statistics" if from_stats else "summary",
+        # The in-memory daily copy behind the month-to-date and 30-day sensors.
+        "summary_days": len(summary),
         "statistics": [
             f"{DOMAIN}:{m.key}_{s}"
             for s in (CONSUMPTION, EXPORT, f"{CONSUMPTION}_power", f"{EXPORT}_power")
@@ -610,7 +627,7 @@ METER_SENSORS: tuple[MeterSensorDescription, ...] = (
         translation_key="usage_history_days",
         entity_category=EntityCategory.DIAGNOSTIC,
         native_unit_of_measurement="d",
-        value_fn=lambda m: len({d for v in m.daily_history.values() for d in v}) or None,
+        value_fn=_history_days,
         attrs_fn=_history_attrs,
         exists_fn=lambda m: bool(m.daily_history),
     ),
