@@ -117,6 +117,8 @@ release. It is read-only; to customise it, copy the cards from
 | Daily grid energy | 30 days of daily import and export from the meter |
 | Grid power | 7 days of hourly mean and peak import and export power |
 | Daily peak grid power | 30 days of the highest 5-minute import and export |
+| Monthly grid energy, 2 years | Up to 24 months of import and export, as bars |
+| Weekly grid power, 2 years | Up to 104 weeks of mean power and the highest 5-minute import and export |
 | Solar and battery register | DER capacity, export limit, register issues and history depth |
 | Bills and payments | Balance, latest invoice, last payment and last refund |
 | Charges and credits | This month and last statement |
