@@ -39,10 +39,17 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.helpers.storage import Store
 
+from .energy import ENERGY_CHOICES, ENERGY_NO_CHANGE
 from .const import (
+    CONF_ENERGY_DASHBOARD,
     CALLBACK_PATH,
     CONF_ALLOW_HTTP,
     CONF_APP_ID,
@@ -201,6 +208,7 @@ class OpenfeedConfigFlow(ConfigFlow, domain=DOMAIN):
         self._subject: str | None = None
         self._failure: str | None = None
         self._grant_action = "create"
+        self._entry_data: dict[str, Any] = {}
         # Show the "allow plain http" box once a plain http URL was refused.
         self._offer_http = False
         # A sign-in failure to show on the user step, and its detail.
@@ -429,9 +437,35 @@ class OpenfeedConfigFlow(ConfigFlow, domain=DOMAIN):
 
         await self.async_set_unique_id(unique_id)
         self._abort_if_unique_id_configured()
+        self._entry_data = data
+        return await self.async_step_energy()
+
+    async def async_step_energy(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Offer to add the meter data to the Energy dashboard, then create the entry."""
+        if user_input is None:
+            return self.async_show_form(
+                step_id="energy",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required(
+                            CONF_ENERGY_DASHBOARD, default=ENERGY_NO_CHANGE
+                        ): SelectSelector(
+                            SelectSelectorConfig(
+                                options=ENERGY_CHOICES,
+                                translation_key=CONF_ENERGY_DASHBOARD,
+                                mode=SelectSelectorMode.LIST,
+                            )
+                        ),
+                    }
+                ),
+            )
         # The keys now live in the entry; the next setup starts with new ones.
         await _key_store(self.hass).async_remove()
-        return self.async_create_entry(title="openfeed CDR", data=data)
+        return self.async_create_entry(
+            title="openfeed CDR",
+            data=self._entry_data,
+            options={CONF_ENERGY_DASHBOARD: user_input[CONF_ENERGY_DASHBOARD]},
+        )
 
     # Reauth and reconfigure --------------------------------------------------
 
@@ -496,6 +530,14 @@ class OpenfeedOptionsFlow(OptionsFlow):
                 vol.Coerce(int), vol.Range(min=1, max=MAX_BACKFILL_DAYS)
             ),
             vol.Required(CONF_SIDEBAR_DASHBOARD, default=sidebar): bool,
+            # Applied once on the reload that saving the options triggers.
+            vol.Required(CONF_ENERGY_DASHBOARD, default=ENERGY_NO_CHANGE): SelectSelector(
+                SelectSelectorConfig(
+                    options=ENERGY_CHOICES,
+                    translation_key=CONF_ENERGY_DASHBOARD,
+                    mode=SelectSelectorMode.LIST,
+                )
+            ),
         }
         # Transaction totals only make sense when banking is shared.
         if SCOPE_BANKING in self.config_entry.data.get(CONF_SCOPES, []):

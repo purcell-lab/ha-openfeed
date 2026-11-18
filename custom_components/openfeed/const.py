@@ -54,6 +54,8 @@ DEFAULT_BACKFILL_DAYS: Final = 60
 MAX_BACKFILL_DAYS: Final = 365
 # Opt in: fetch bank transactions and keep monthly and 30-day totals only.
 CONF_BANK_TRANSACTIONS: Final = "bank_transactions"
+# What to do with the Energy dashboard, applied once (see energy.py).
+CONF_ENERGY_DASHBOARD: Final = "energy_dashboard"
 
 # The callback views Home Assistant serves for the browser redirects.
 CALLBACK_PATH: Final = "/api/openfeed/callback"

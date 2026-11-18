@@ -720,3 +720,73 @@ async def test_diagnostics_show_usage_requests(hass, entry, aioclient_mock) -> N
     assert ACC not in str(runs) and METER not in str(runs)
     samples = runs[0]["samples"]
     assert samples["days"] >= 1 and (samples["data_day"] or samples["empty_day"])
+
+
+OTHER_GRID = {
+    "type": "grid", "stat_energy_from": "sensor.house_grid_import", "stat_energy_to": None,
+    "stat_cost": None, "entity_energy_price": None, "number_energy_price": None,
+    "stat_compensation": None, "entity_energy_price_export": None,
+    "number_energy_price_export": None, "cost_adjustment_day": 0.0,
+}
+SOLAR = {"type": "solar", "stat_energy_from": "sensor.solar_energy", "config_entry_solar_forecast": None}
+
+
+async def _energy_prefs(hass, seed=None):
+    from homeassistant.components.energy.data import async_get_manager
+    from homeassistant.setup import async_setup_component
+
+    assert await async_setup_component(hass, "energy", {})
+    manager = await async_get_manager(hass)
+    if seed is not None:
+        await manager.async_update({"energy_sources": seed})
+    return manager
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_types"),
+    [("add", ["grid", "solar", "grid"]), ("replace", ["solar", "grid"])],
+)
+async def test_energy_dashboard_choice_applied_once(hass, entry, aioclient_mock, mode, expected_types) -> None:
+    manager = await _energy_prefs(hass, [OTHER_GRID, SOLAR])
+    hass.config_entries.async_update_entry(entry, options={"backfill_days": 3, "energy_dashboard": mode})
+    _mock_api(aioclient_mock)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    sources = manager.data["energy_sources"]
+    assert [s["type"] for s in sources] == expected_types
+    ours = sources[-1]
+    assert ours["stat_energy_from"] == f"openfeed:nmi_{NMI.lower()}_consumption"
+    assert ours["stat_energy_to"] == f"openfeed:nmi_{NMI.lower()}_export"
+    assert ours["entity_energy_price"] is None and ours["name"].startswith("openfeed meter")
+    # The choice is reset, so a reload or later manual edit is not undone.
+    assert entry.options["energy_dashboard"] == "no_change"
+    assert entry.options["backfill_days"] == 3
+    assert entry.state is ConfigEntryState.LOADED
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert manager.data["energy_sources"] == sources
+
+
+async def test_energy_dashboard_add_is_idempotent(hass, entry, aioclient_mock) -> None:
+    from custom_components.openfeed.energy import grid_sources, merge_sources
+
+    _mock_api(aioclient_mock)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    ours = grid_sources(entry.runtime_data.data.energy)
+    assert len(ours) == 1
+    once = merge_sources([SOLAR], ours, "add")
+    assert once == [SOLAR, ours[0]]
+    assert merge_sources(once, ours, "add") is None
+    assert merge_sources(once, ours, "replace") is None
+    assert merge_sources([OTHER_GRID], ours, "no_change") is None
+
+
+async def test_energy_dashboard_left_alone_without_energy(hass, entry, aioclient_mock, caplog) -> None:
+    hass.config_entries.async_update_entry(entry, options={"energy_dashboard": "add"})
+    _mock_api(aioclient_mock)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert "Energy integration is not loaded" in caplog.text
+    assert entry.options["energy_dashboard"] == "no_change"

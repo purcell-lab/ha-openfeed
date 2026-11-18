@@ -2,6 +2,7 @@
   "domain": "openfeed",
   "name": "openfeed Consumer Data Right",
   "after_dependencies": [
+    "energy",
     "lovelace"
   ],
   "codeowners": [
