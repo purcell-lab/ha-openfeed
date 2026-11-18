@@ -60,7 +60,15 @@ from .statistics import (
     meter_label,
     statistic_id,
 )
-from .usage import AEST, UsageSummary, sample_records, summarise, usage_windows
+from .usage import (
+    AEST,
+    UsageSummary,
+    days_with_readings,
+    sample_records,
+    summarise,
+    uncovered_window,
+    usage_windows,
+)
 
 # Keep enough merged daily totals for 30-day and month-to-date sensors.
 HISTORY_KEEP_DAYS = 400
@@ -505,15 +513,28 @@ class OpenfeedCoordinator(DataUpdateCoordinator[OpenfeedData]):
         runs.append(run)
         del runs[:-USAGE_TRACE_RUNS]
         records: list[dict[str, Any]] = []
+        # Days already returned with readings. openfeed ignores oldestDate, so
+        # one window can bring back years; later windows only ask for the rest.
+        covered: set[date] = set()
         for start, end in usage_windows(oldest, today, USAGE_WINDOW_DAYS):
             window: dict[str, Any] = {
                 "oldest": start.isoformat(), "newest": end.isoformat(), "requests": []
             }
             run["windows"].append(window)
+            remaining = uncovered_window(start, end, covered)
+            if remaining is None:
+                window.update(skipped="covered", records=0,
+                              first_interval_date=None, last_interval_date=None)
+                continue
+            if remaining != (start, end):
+                window["requested_oldest"] = remaining[0].isoformat()
+                window["requested_newest"] = remaining[1].isoformat()
+            start, end = remaining
             got = await self.session.client.energy_usage(
                 md.account_id, md.meter["meterId"], start.isoformat(), end.isoformat(),
                 trace=window["requests"],
             )
+            covered |= days_with_readings(got)
             dates = sorted(str(r.get("intervalDate"))[:10] for r in got if r.get("intervalDate"))
             window.update(
                 records=len(got),

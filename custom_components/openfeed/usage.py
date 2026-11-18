@@ -217,6 +217,34 @@ def has_readings(record: dict[str, Any]) -> bool:
     return False
 
 
+def days_with_readings(records: list[dict[str, Any]]) -> set[date]:
+    """The intervalDate of every record that carries interval readings."""
+    days: set[date] = set()
+    for record in records:
+        text = str(record.get("intervalDate") or "")[:10]
+        if text and has_readings(record):
+            try:
+                days.add(date.fromisoformat(text))
+            except ValueError:
+                continue
+    return days
+
+
+def uncovered_window(start: date, end: date, covered: set[date]) -> tuple[date, date] | None:
+    """Shrink a request window past days already returned with readings.
+
+    openfeed does not apply oldestDate, so one window can return far more
+    than asked. Days a previous window already returned with readings are
+    trimmed from both ends; None when nothing is left to ask for. A gap in
+    the middle keeps the window whole, because the API has no way to skip it.
+    """
+    while start <= end and start in covered:
+        start += timedelta(days=1)
+    while end >= start and end in covered:
+        end -= timedelta(days=1)
+    return (start, end) if start <= end else None
+
+
 def sample_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     """Pick the newest day with readings and the newest day without any.
 
