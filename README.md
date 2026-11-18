@@ -98,6 +98,11 @@ surface it:
   [docs/dashboard.yaml](docs/dashboard.yaml) is the same layout as a view you can
   paste into any dashboard.
 
+Daily usage and peak sensors, and month-to-date and last-30-days energy totals,
+use AEST market days (fixed UTC+10, without daylight saving), matching the meter
+data. The Energy dashboard groups hourly statistics into Home Assistant's local
+days, so its daily totals can cover a different interval.
+
 ### Sidebar dashboard
 
 The integration adds **Energy data** to the sidebar. It is generated from your shared
@@ -146,6 +151,13 @@ record for the newest day with readings and the newest day without, with IDs rem
 Home Assistant long-term statistics are hourly. The energy statistics are hourly sums;
 the power statistics keep the hourly maximum of the meter's own interval reads, so a
 5-minute peak is not lost.
+
+Usage history dates and the summary sensors use midnight-to-midnight AEST market
+days. Today's AEST day is excluded from the latest complete day, month-to-date
+and last-30-days usage totals. During daylight saving in NSW, VIC, TAS and ACT,
+an AEST day runs from 01:00 to 01:00 local time; in SA it runs from 00:30 to
+00:30. Compare the same day boundaries when reconciling usage with local-day
+Energy dashboard totals.
 
 ### Billing
 
