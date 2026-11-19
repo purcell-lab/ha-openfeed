@@ -32,6 +32,13 @@
           "redirect_base": "Where openfeed sends your browser back after sign-in. Use your Nabu Casa remote URL, your own domain, or a local address your browser can reach.",
           "allow_insecure_redirect": "The sign-in code and the consent return travel unencrypted to a plain http:// address. Only tick this if the browser and Home Assistant share a network you trust. An https URL (Nabu Casa or your own domain) is safer."
         }
+      },
+      "energy": {
+        "title": "Energy dashboard",
+        "description": "openfeed is connected. Do you want to use your retailer's meter data in the Energy dashboard?\n\nYour retailer's meter data can be a grid connection in Settings > Dashboards > Energy: hourly import and export, up to 2 years back, a day behind. Only use it if no other meter already feeds the grid connection, or grid energy is counted twice. It has no price: Home Assistant can only price imported statistics from a cost statistic. The choice is applied once, after the first refresh, and you can change the Energy dashboard freely afterwards.",
+        "data": {
+          "energy_dashboard": "Energy dashboard"
+        }
       }
     },
     "progress": {
@@ -79,11 +86,13 @@
         "data": {
           "backfill_days": "Days of usage to import on first load",
           "sidebar_dashboard": "Show the openfeed dashboard in the sidebar",
-          "bank_transactions": "Summarise bank transactions (totals only)"
+          "bank_transactions": "Summarise bank transactions (totals only)",
+          "energy_dashboard": "Energy dashboard"
         },
         "data_description": {
           "sidebar_dashboard": "A read-only dashboard built from this integration's entities and statistics. It updates with each release.",
           "bank_transactions": "Needs banking shared. Adds money in, money out, interest and fee totals for each bank account. Only totals are kept; descriptions, payees and references are never stored.",
+          "energy_dashboard": "Your retailer's meter data can be a grid connection in Settings > Dashboards > Energy: hourly import and export, up to 2 years back, a day behind. Only use it if no other meter already feeds the grid connection, or grid energy is counted twice. It has no price: Home Assistant can only price imported statistics from a cost statistic. The choice is applied once, after the first refresh, and you can change the Energy dashboard freely afterwards.",
           "backfill_days": "How far back the first load (and each restart) asks for. 730 days is the 2 years the Consumer Data Right covers. openfeed may return more than asked; everything returned is imported."
         }
       }
@@ -260,6 +269,15 @@
     "calendar": {
       "bills": {
         "name": "Bills"
+      }
+    }
+  },
+  "selector": {
+    "energy_dashboard": {
+      "options": {
+        "no_change": "Leave the Energy dashboard as it is",
+        "add": "Add the meter as another grid connection",
+        "replace": "Replace the existing grid connections with the meter"
       }
     }
   }

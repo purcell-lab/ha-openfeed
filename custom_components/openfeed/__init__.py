@@ -61,6 +61,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: OpenfeedConfigEntry) -> 
     coordinator = OpenfeedCoordinator(hass, entry, session)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
+    await _async_apply_energy_dashboard(hass, entry, coordinator)
     options_snapshot = dict(entry.options)
 
     async def _async_entry_updated(hass: HomeAssistant, entry: OpenfeedConfigEntry) -> None:
@@ -74,6 +75,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: OpenfeedConfigEntry) -> 
     if wants_dashboard(hass):
         async_register_dashboard(hass)
     return True
+
+
+async def _async_apply_energy_dashboard(
+    hass: HomeAssistant, entry: OpenfeedConfigEntry, coordinator: OpenfeedCoordinator
+) -> None:
+    """Apply a pending Energy dashboard choice once, then reset it.
+
+    Runs before the options snapshot, so resetting the option does not
+    trigger a reload.
+    """
+    from .const import CONF_ENERGY_DASHBOARD
+    from .energy import ENERGY_NO_CHANGE, async_apply_energy_choice
+
+    mode = entry.options.get(CONF_ENERGY_DASHBOARD, ENERGY_NO_CHANGE)
+    if mode == ENERGY_NO_CHANGE:
+        return
+    if await async_apply_energy_choice(hass, coordinator.data.energy, mode):
+        hass.config_entries.async_update_entry(
+            entry, options={**entry.options, CONF_ENERGY_DASHBOARD: ENERGY_NO_CHANGE}
+        )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: OpenfeedConfigEntry) -> bool:

@@ -67,8 +67,8 @@ data and asks you to reconnect.
 | Bank money in and out (opt in) | `sensor.bank_<account>_month_to_date_money_in`, `_money_out`, `_last_30_days_money_in`, `_money_out` | Every 4 hours |
 | Bank interest and fees (opt in) | `sensor.bank_<account>_month_to_date_interest` (net), `_month_to_date_fees` | Every 4 hours |
 
-Add the three external statistics in **Settings > Dashboards > Energy** under grid
-consumption and return to grid. The first load asks for 2 years of history, the most the
+To use the meter data in the Energy dashboard, see
+[Energy dashboard](#energy-dashboard). The first load asks for 2 years of history, the most the
 Consumer Data Right covers (change it in the integration options, from 1 to 730 days). After that the last 7 days are re-imported every
 3 hours so late and substituted reads are corrected.
 
@@ -106,6 +106,59 @@ Daily usage and peak sensors, and month-to-date and last-30-days energy totals,
 use AEST market days (fixed UTC+10, without daylight saving), matching the meter
 data. The Energy dashboard groups hourly statistics into Home Assistant's local
 days, so its daily totals can cover a different interval.
+
+### Energy dashboard
+
+The meter data can be a grid connection in **Settings > Dashboards > Energy**.
+
+**What the Energy dashboard needs**
+
+| Field | Statistic | Notes |
+|---|---|---|
+| Grid consumption (import) | `openfeed:<meter_key>_consumption` | Hourly kWh, up to 2 years back |
+| Return to grid (export) | `openfeed:<meter_key>_export` | Only when the meter has an export register |
+| Grid power | none | The power statistics are external, so the Energy dashboard cannot use them for live power. Use the sidebar dashboard charts instead |
+| Price | none | Home Assistant prices external statistics only from a cost statistic, and openfeed shares bills, not hourly costs. Leave price and compensation empty |
+
+Things to know before you add it:
+
+- **Grid energy is counted twice** if another meter (an inverter, a CT clamp, a smart meter
+  integration) already feeds a grid connection. Use either that meter or the retailer's
+  meter, not both, or choose **Replace** below.
+- **It is a day behind.** openfeed refreshes every 6 hours and meter data usually lags a
+  day, so today's bars fill in tomorrow. The last 7 days are re-imported every 3 hours,
+  so late and substituted reads are corrected.
+- **Days are local.** The Energy dashboard groups the hourly statistics into Home
+  Assistant's local days, while the integration's own daily sensors use AEST market days.
+
+**Setting it up**
+
+At the end of setup, the integration asks what to do with the Energy dashboard. You can
+change it later under **Settings > Devices & services > openfeed > Configure**.
+
+| Choice | What happens |
+|---|---|
+| Leave the Energy dashboard as it is | Nothing (the default). Add the statistics by hand if you want them |
+| Add the meter as another grid connection | One grid connection per meter, named `openfeed meter ending <last 4>`. Every other source is kept |
+| Replace the existing grid connections with the meter | Every existing grid connection is removed and the meter's is added. Solar, battery, gas, water and devices are kept |
+
+The choice is applied once, after the first refresh that has meter data, and then goes
+back to **Leave the Energy dashboard as it is**. So a later change you make in the Energy
+dashboard is never undone. Adding the same meter twice does nothing. If the Energy
+integration is not loaded, nothing is changed and a warning is logged.
+
+To add it by hand: **Settings > Dashboards > Energy > Add grid connection**, then pick
+**openfeed meter ending &lt;last 4&gt; grid consumption** and **grid export**. The meter
+sensors' `statistic_prefix` attribute shows the `<meter_key>`.
+
+**Integration options**
+
+| Option | Default | Range | Effect |
+|---|---|---|---|
+| Days of usage to import on first load | 730 | 1 to 730 | How far back each start-up backfill asks for. openfeed may return more |
+| Show the openfeed dashboard in the sidebar | On | | The read-only **Energy data** dashboard |
+| Energy dashboard | Leave as it is | | Applied once, as above |
+| Summarise bank transactions | Off | | Only when banking is shared |
 
 ### Sidebar dashboard
 

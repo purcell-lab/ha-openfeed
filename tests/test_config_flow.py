@@ -128,6 +128,8 @@ async def test_full_flow_with_consent(hass: HomeAssistant, openfeed, aioclient_m
         result["flow_id"], {"grantId": "g-1", "consented": "true"})
     assert result["type"] is FlowResultType.EXTERNAL_STEP_DONE
     result = await hass.config_entries.flow.async_configure(result["flow_id"])
+    assert result["type"] is FlowResultType.FORM and result["step_id"] == "energy"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"energy_dashboard": "no_change"})
     assert result["type"] is FlowResultType.CREATE_ENTRY
     data = result["data"]
     assert data[CONF_GRANT_ID] == "g-1"
@@ -310,6 +312,8 @@ async def test_retry_after_failure_keeps_keys_and_values(hass: HomeAssistant, op
     result = await hass.config_entries.flow.async_configure(
         flow_id, {"code": "c1", "iss": ISSUER, "state": _pending_state(hass, "auth")})
     result = await hass.config_entries.flow.async_configure(flow_id)
+    assert result["type"] is FlowResultType.FORM and result["step_id"] == "energy"
+    result = await hass.config_entries.flow.async_configure(flow_id, {"energy_dashboard": "no_change"})
     assert result["type"] is FlowResultType.CREATE_ENTRY
 
 
@@ -331,6 +335,8 @@ async def test_keys_forgotten_after_entry_created(hass: HomeAssistant, openfeed,
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"code": "c1", "iss": ISSUER, "state": _pending_state(hass, "auth")})
     result = await hass.config_entries.flow.async_configure(result["flow_id"])
+    assert result["type"] is FlowResultType.FORM and result["step_id"] == "energy"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"energy_dashboard": "no_change"})
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
     assert "openfeed.pending_keys" not in hass_storage
@@ -424,3 +430,22 @@ async def test_options_offer_bank_transactions_only_with_banking(hass: HomeAssis
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"backfill_days": 60, "sidebar_dashboard": True, "bank_transactions": True})
     assert banking.options["bank_transactions"] is True
+
+
+
+async def test_energy_choice_saved_as_option(hass: HomeAssistant, openfeed) -> None:
+    """The setup flow offers the Energy dashboard and stores the choice for setup."""
+    openfeed["tokens"] = [
+        {"access_token": "a1", "refresh_token": "r1", "expires_in": 600, "id_token": "SIGN",
+         "authorization_details": [{"type": "disclosure_grant_v1", "grant_id": "g-1"}]},
+    ]
+    result = await _start(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"code": "c1", "iss": ISSUER, "state": _pending_state(hass, "auth")})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"])
+    assert result["step_id"] == "energy"
+    assert result["data_schema"]({})["energy_dashboard"] == "no_change"
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"energy_dashboard": "add"})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["options"] == {"energy_dashboard": "add"}
