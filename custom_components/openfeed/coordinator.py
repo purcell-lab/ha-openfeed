@@ -53,6 +53,7 @@ from .der import DerSummary, summarise_der
 from .statistics import (
     account_key,
     async_clear,
+    async_daily_coverage,
     async_import_meter,
     async_import_money,
     async_import_power,
@@ -60,7 +61,15 @@ from .statistics import (
     meter_label,
     statistic_id,
 )
-from .usage import AEST, UsageSummary, sample_records, summarise, usage_windows
+from .usage import (
+    AEST,
+    CONSUMPTION,
+    EXPORT,
+    UsageSummary,
+    sample_records,
+    summarise,
+    usage_windows,
+)
 
 # Keep enough merged daily totals for 30-day and month-to-date sensors.
 HISTORY_KEEP_DAYS = 400
@@ -102,6 +111,10 @@ class MeterData:
     der_status: str = "ok"
     # "list" when the meters list failed and the last good meter data is shown.
     meters_source: str = "list"
+    # Days held in long-term statistics (all imports, not just this run).
+    stats_days: int | None = None
+    stats_oldest: date | None = None
+    stats_latest: date | None = None
 
 
 @dataclass(slots=True)
@@ -181,6 +194,8 @@ class OpenfeedCoordinator(DataUpdateCoordinator[OpenfeedData]):
         self._money_migrated = False
         # meter ID -> series -> AEST date -> kWh, merged across refreshes
         self._daily_history: dict[str, dict[str, dict[date, float]]] = {}
+        # meter ID -> (days, oldest, latest) held in long-term statistics
+        self._stats_coverage: dict[str, tuple[int, date | None, date | None]] = {}
         # account ID -> (fetched at, plans list or None)
         self._plan_cache: dict[str, tuple[datetime, list[dict[str, Any]] | None]] = {}
         # meter ID -> (fetched at, meter detail or None)
@@ -232,6 +247,7 @@ class OpenfeedCoordinator(DataUpdateCoordinator[OpenfeedData]):
             # then ask the user to reconnect.
             self._usage_cache.clear()
             self._daily_history.clear()
+            self._stats_coverage.clear()
             self._plan_cache.clear()
             self._meter_detail_cache.clear()
             self._billing_cache.clear()
@@ -482,6 +498,8 @@ class OpenfeedCoordinator(DataUpdateCoordinator[OpenfeedData]):
                 md.usage_fetched_at = cached.usage_fetched_at if cached else None
                 md.usage_status = "error"
         md.daily_history = self._daily_history.get(meter_id, {})
+        if coverage := self._stats_coverage.get(meter_id):
+            md.stats_days, md.stats_oldest, md.stats_latest = coverage
         self._usage_cache[meter_id] = md
         return md
 
@@ -542,8 +560,20 @@ class OpenfeedCoordinator(DataUpdateCoordinator[OpenfeedData]):
         if summary.hourly_power:
             label = f"openfeed {meter_label(md.meter).lower()}"
             await async_import_power(self.hass, md.key, label, summary.hourly_power)
+        if summary.hourly:
+            await self._update_stats_coverage(md)
         self._backfilled.add(md.meter["meterId"])
         return summary
+
+    async def _update_stats_coverage(self, md: MeterData) -> None:
+        """Count the days of usage held in long-term statistics for a meter."""
+        ids = [statistic_id(md.key, s) for s in (CONSUMPTION, EXPORT)]
+        try:
+            coverage = await async_daily_coverage(self.hass, ids)
+        except Exception as err:  # noqa: BLE001 - a recorder hiccup must not fail the refresh
+            _LOGGER.debug("openfeed could not read statistics coverage: %s", err)
+            return
+        self._stats_coverage[md.meter["meterId"]] = coverage
 
 
 def _apply_balance(item: EnergyAccountData | BankingAccountData, result: Any) -> None:
