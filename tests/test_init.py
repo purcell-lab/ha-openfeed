@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, time as dtime, timedelta
 import time
 
 import pytest
@@ -529,6 +529,14 @@ async def test_sidebar_dashboard(hass, entry, aioclient_mock, hass_ws_client) ->
                 assert NMI not in row["name"]
     power = next(c for c in cards if c["title"].startswith("Grid power"))
     assert power["entities"][0]["entity"] == f"openfeed:nmi_{NMI.lower()}_consumption_power"
+    # Two-year charts cover every day the CDR shares.
+    energy_2y = next(c for c in cards if c["title"].startswith("Monthly grid energy, 2 years"))
+    assert energy_2y["period"] == "month" and energy_2y["days_to_show"] == 730
+    assert [e["entity"] for e in energy_2y["entities"]] == [
+        f"openfeed:nmi_{NMI.lower()}_consumption", f"openfeed:nmi_{NMI.lower()}_export"]
+    power_2y = next(c for c in cards if c["title"].startswith("Weekly grid power"))
+    assert power_2y["period"] == "week" and power_2y["days_to_show"] == 730
+    assert power_2y["stat_types"] == ["mean", "max"]
 
     # Switching the option off removes the panel on reload.
     hass.config_entries.async_update_entry(entry, options={"sidebar_dashboard": False})
@@ -790,3 +798,31 @@ async def test_energy_dashboard_left_alone_without_energy(hass, entry, aioclient
     await hass.async_block_till_done()
     assert "Energy integration is not loaded" in caplog.text
     assert entry.options["energy_dashboard"] == "no_change"
+
+
+async def test_usage_history_counts_long_term_statistics(hass, entry, aioclient_mock) -> None:
+    """The usage history sensor counts days in the recorder, beyond the 400-day summary."""
+    from datetime import UTC
+
+    from custom_components.openfeed.statistics import async_import_meter
+
+    _mock_api(aioclient_mock)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = entry.runtime_data
+    md = next(iter(coordinator.data.energy[ACC].meters.values()))
+    # An hour 500 days back: older than the in-memory summary keeps.
+    old_day = dt_util.now(AEST).date() - timedelta(days=500)
+    old_hour = datetime.combine(old_day, dtime(1), AEST).astimezone(UTC)
+    await async_import_meter(hass, md.key, "openfeed test", {"consumption": {old_hour: 1.0}})
+    # Force the next refresh to re-read usage, which updates the coverage.
+    for cached in coordinator._usage_cache.values():
+        cached.usage_fetched_at = dt_util.utcnow() - timedelta(hours=4)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    history = hass.states.get(f"sensor.meter_{NMI.lower()}_usage_history")
+    assert int(history.state) == 3
+    assert history.attributes["oldest"] == old_day.isoformat()
+    assert history.attributes["source"] == "statistics"
+    assert history.attributes["summary_days"] == 2

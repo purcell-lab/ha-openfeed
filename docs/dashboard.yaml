@@ -48,6 +48,17 @@ cards:
       - entity: openfeed:<meter_key>_export
         name: Export
   - type: statistics-graph
+    title: Monthly grid energy, 2 years (meter reads)
+    period: month
+    days_to_show: 730
+    chart_type: bar
+    stat_types: [change]
+    entities:
+      - entity: openfeed:<meter_key>_consumption
+        name: Import
+      - entity: openfeed:<meter_key>_export
+        name: Export
+  - type: statistics-graph
     title: Grid power, hourly mean and peak (last 7 days)
     period: hour
     days_to_show: 7
@@ -69,6 +80,17 @@ cards:
         name: Peak import
       - entity: openfeed:<meter_key>_export_power
         name: Peak export
+  - type: statistics-graph
+    title: Weekly grid power, mean and 5-minute peak (2 years)
+    period: week
+    days_to_show: 730
+    chart_type: line
+    stat_types: [mean, max]
+    entities:
+      - entity: openfeed:<meter_key>_consumption_power
+        name: Grid import
+      - entity: openfeed:<meter_key>_export_power
+        name: Grid export
   - type: statistics-graph
     title: Monthly billing
     period: month
