@@ -92,7 +92,8 @@
         "data_description": {
           "sidebar_dashboard": "A read-only dashboard built from this integration's entities and statistics. It updates with each release.",
           "bank_transactions": "Needs banking shared. Adds money in, money out, interest and fee totals for each bank account. Only totals are kept; descriptions, payees and references are never stored.",
-          "energy_dashboard": "Your retailer's meter data can be a grid connection in Settings > Dashboards > Energy: hourly import and export, up to 2 years back, a day behind. Only use it if no other meter already feeds the grid connection, or grid energy is counted twice. It has no price: Home Assistant can only price imported statistics from a cost statistic. The choice is applied once, after the first refresh, and you can change the Energy dashboard freely afterwards."
+          "energy_dashboard": "Your retailer's meter data can be a grid connection in Settings > Dashboards > Energy: hourly import and export, up to 2 years back, a day behind. Only use it if no other meter already feeds the grid connection, or grid energy is counted twice. It has no price: Home Assistant can only price imported statistics from a cost statistic. The choice is applied once, after the first refresh, and you can change the Energy dashboard freely afterwards.",
+          "backfill_days": "How far back the first load (and each restart) asks for. 730 days is the 2 years the Consumer Data Right covers. openfeed may return more than asked; everything returned is imported."
         }
       }
     }

@@ -800,6 +800,44 @@ async def test_energy_dashboard_left_alone_without_energy(hass, entry, aioclient
     assert entry.options["energy_dashboard"] == "no_change"
 
 
+
+async def test_backfill_skips_windows_already_returned(hass, entry, aioclient_mock) -> None:
+    """openfeed ignores oldestDate; later windows are not requested once covered."""
+    from custom_components.openfeed.diagnostics import async_get_config_entry_diagnostics
+
+    hass.config_entries.async_update_entry(entry, options={"backfill_days": 70})
+    # The usage endpoint returns all 70 days whatever range is asked for.
+    today = dt_util.now(AEST).date()
+    days = [(today - timedelta(days=back)).isoformat() for back in range(70, 0, -1)]
+    records = [
+        {"meterId": METER, "intervalDate": day, "reads": [
+            {"meterId": METER, "registerSuffix": "E1", "readStartDate": day, "unitOfMeasure": "KWH",
+             "readUType": "intervalRead",
+             "intervalRead": {"readIntervalLength": 30, "intervalReads": [0.5] * 48}}]}
+        for day in days
+    ]
+    _mock_api(aioclient_mock)
+    usage_url = f"{API}/v1/energy/accounts/{ACC}/meters/{METER}/usage"
+    aioclient_mock._mocks = [m for m in aioclient_mock._mocks if str(m.url) != usage_url]
+    aioclient_mock.get(usage_url, json={"data": records})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    usage_calls = [c for c in aioclient_mock.mock_calls if str(c[1]).startswith(usage_url)]
+    assert len(usage_calls) == 2
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+    windows = diag["energy"]["account_0"]["meters"][0]["usage_requests"][0]["windows"]
+    assert len(windows) == 3
+    assert "skipped" not in windows[0] and windows[0]["records"] == 70
+    # The middle window was wholly returned by the first, so it is not requested.
+    assert windows[1]["skipped"] == "covered" and windows[1]["requests"] == []
+    # The last window only asks for today, the one day the first did not return.
+    assert windows[2]["requested_oldest"] == windows[2]["requested_newest"] == today.isoformat()
+    # Every day the first window returned is imported.
+    meter = next(iter(entry.runtime_data.data.energy[ACC].meters.values()))
+    assert len(meter.daily_history["consumption"]) == 70
+
+
 async def test_usage_history_counts_long_term_statistics(hass, entry, aioclient_mock) -> None:
     """The usage history sensor counts days in the recorder, beyond the 400-day summary."""
     from datetime import UTC

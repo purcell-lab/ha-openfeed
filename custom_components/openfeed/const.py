@@ -50,8 +50,9 @@ MONEY_STATS_VERSION: Final = 3
 CONF_SIDEBAR_DASHBOARD: Final = "sidebar_dashboard"
 DASHBOARD_URL_PATH: Final = "openfeed"
 CONF_BACKFILL_DAYS: Final = "backfill_days"
-DEFAULT_BACKFILL_DAYS: Final = 60
-MAX_BACKFILL_DAYS: Final = 365
+# The CDR makes the last 2 years of usage required consumer data.
+DEFAULT_BACKFILL_DAYS: Final = 730
+MAX_BACKFILL_DAYS: Final = 730
 # Opt in: fetch bank transactions and keep monthly and 30-day totals only.
 CONF_BANK_TRANSACTIONS: Final = "bank_transactions"
 # What to do with the Energy dashboard, applied once (see energy.py).

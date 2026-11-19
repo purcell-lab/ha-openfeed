@@ -136,3 +136,33 @@ def test_sample_records_picks_good_and_empty_days_without_ids():
 def test_sample_records_empty():
     out = sample_records([])
     assert out["data_day"] is None and out["empty_day"] is None and out["days"] == 0
+
+
+def test_uncovered_window_trims_covered_ends():
+    from datetime import date, timedelta
+
+    from custom_components.openfeed.usage import uncovered_window
+
+    start, end = date(2026, 10, 1), date(2026, 10, 30)
+    assert uncovered_window(start, end, set()) == (start, end)
+    covered = {start + timedelta(days=i) for i in range(10)}
+    assert uncovered_window(start, end, covered) == (date(2026, 10, 11), end)
+    covered |= {end - timedelta(days=i) for i in range(5)}
+    assert uncovered_window(start, end, covered) == (date(2026, 10, 11), date(2026, 10, 25))
+    every = {start + timedelta(days=i) for i in range(30)}
+    assert uncovered_window(start, end, every) is None
+    # A gap in the middle keeps the window whole between covered ends.
+    gap = every - {date(2026, 10, 15)}
+    assert uncovered_window(start, end, gap) == (date(2026, 10, 15), date(2026, 10, 15))
+
+
+def test_days_with_readings_ignores_empty_days():
+    from datetime import date
+
+    from custom_components.openfeed.usage import days_with_readings
+
+    good = {"intervalDate": "2026-11-15", "reads": [{"intervalRead": {"intervalReads": [0, 0.1]}}]}
+    empty = {"intervalDate": "2026-11-03", "reads": [{"intervalRead": {"intervalReads": None,
+                                                                       "aggregateValue": 12.0}}]}
+    zeros = {"intervalDate": "2026-11-02", "reads": [{"intervalRead": {"intervalReads": [0, 0]}}]}
+    assert days_with_readings([good, empty, zeros, {"reads": []}]) == {date(2026, 11, 15)}

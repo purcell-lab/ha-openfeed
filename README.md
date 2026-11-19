@@ -68,11 +68,15 @@ data and asks you to reconnect.
 | Bank interest and fees (opt in) | `sensor.bank_<account>_month_to_date_interest` (net), `_month_to_date_fees` | Every 4 hours |
 
 To use the meter data in the Energy dashboard, see
-[Energy dashboard](#energy-dashboard). The first load imports 60 days of history (change it in
-the integration options, up to 365). After that the last 7 days are re-imported every
+[Energy dashboard](#energy-dashboard). The first load asks for 2 years of history, the most the
+Consumer Data Right covers (change it in the integration options, from 1 to 730 days). After that the last 7 days are re-imported every
 3 hours so late and substituted reads are corrected.
 
 Basic (accumulation) meter reads are not imported to statistics; only interval reads are.
+
+openfeed does not apply the start date of a usage request, so one 30-day window can
+return up to 2 years. Every record returned is imported, and later windows only ask for
+days not yet returned with readings, so a backfill is usually one or two requests.
 
 ### Finding the data
 
@@ -151,7 +155,7 @@ sensors' `statistic_prefix` attribute shows the `<meter_key>`.
 
 | Option | Default | Range | Effect |
 |---|---|---|---|
-| Days of usage to import on first load | 60 | 1 to 365 | How far back each start-up backfill asks for |
+| Days of usage to import on first load | 730 | 1 to 730 | How far back each start-up backfill asks for. openfeed may return more |
 | Show the openfeed dashboard in the sidebar | On | | The read-only **Energy data** dashboard |
 | Energy dashboard | Leave as it is | | Applied once, as above |
 | Summarise bank transactions | Off | | Only when banking is shared |
@@ -197,7 +201,8 @@ day you connect even if openfeed only holds a rolling window.
 
 To see exactly what was asked for and returned, download the integration diagnostics.
 Each meter's `usage_requests` lists the last few usage runs: the date range requested,
-each 30-day window, the records and interval dates returned, and every HTTP page with
+each 30-day window (a window already returned by an earlier one shows `skipped: covered`,
+and a trimmed one shows `requested_oldest` and `requested_newest`), the records and interval dates returned, and every HTTP page with
 its status, time and `x-fapi-interaction-id`. Account and meter IDs are replaced with
 `{id}`. Quote the interaction IDs when you ask openfeed support about missing history.
 Backfill runs also include `samples`: how many returned days carry readings, plus the raw
