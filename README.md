@@ -9,7 +9,8 @@ bank balances.
 
 | Version | Home Assistant | Status |
 |---|---|---|
-| 0.1.13 | 2026.4 or later | Current: Energy dashboard setup, 2-year charts and backfill |
+| 0.1.14 | 2026.4 or later | Current: fixes the start-up stall in 0.1.13 |
+| 0.1.13 | 2026.4 or later | Energy dashboard setup, 2-year charts and backfill |
 | 0.1.7 | 2026.4 or later | Plan tariff sensors, meter detail sensors |
 | 0.1.0 | 2026.4 or later | First release |
 
