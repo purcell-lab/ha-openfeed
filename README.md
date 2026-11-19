@@ -59,7 +59,7 @@ data and asks you to reconnect.
 | Month-to-date and last 30 days grid import and export | `sensor.<meter>_month_to_date_grid_*`, `_last_30_days_grid_*` (kWh, full days only) | With usage |
 | Last statement charges and credits | `sensor.<account>_last_statement_charges`, `_credits` (with net and the statistic IDs as attributes) | Every 6 hours |
 | Bills calendar | `calendar.<account>_bills`: one event per invoice, from issue date to due date, with amount and status | Hourly poll |
-| Usage history held | `sensor.<meter>_usage_history` (days, with oldest date and every statistic ID) | With usage |
+| Usage history held | `sensor.<meter>_usage_history` (days of import or export held in long-term statistics, AEST days, with the oldest and latest date and every statistic ID) | With usage |
 | Substituted intervals | `sensor.<meter>_substituted_intervals` | With usage |
 | Bank current and available balance (optional) | `sensor.bank_<account>_*_balance` | Live, cached up to 15 minutes |
 | Bank credit limit (cards and loans that report one) | `sensor.bank_<account>_credit_limit` | Live, with the balance |
@@ -102,6 +102,11 @@ surface it:
   [docs/dashboard.yaml](docs/dashboard.yaml) is the same layout as a view you can
   paste into any dashboard.
 
+Daily usage and peak sensors, and month-to-date and last-30-days energy totals,
+use AEST market days (fixed UTC+10, without daylight saving), matching the meter
+data. The Energy dashboard groups hourly statistics into Home Assistant's local
+days, so its daily totals can cover a different interval.
+
 ### Sidebar dashboard
 
 The integration adds **Energy data** to the sidebar. It is generated from your shared
@@ -116,6 +121,8 @@ release. It is read-only; to customise it, copy the cards from
 | Daily grid energy | 30 days of daily import and export from the meter |
 | Grid power | 7 days of hourly mean and peak import and export power |
 | Daily peak grid power | 30 days of the highest 5-minute import and export |
+| Monthly grid energy, 2 years | Up to 24 months of import and export, as bars |
+| Weekly grid power, 2 years | Up to 104 weeks of mean power and the highest 5-minute import and export |
 | Solar and battery register | DER capacity, export limit, register issues and history depth |
 | Bills and payments | Balance, latest invoice, last payment and last refund |
 | Charges and credits | This month and last statement |
@@ -151,6 +158,13 @@ record for the newest day with readings and the newest day without, with IDs rem
 Home Assistant long-term statistics are hourly. The energy statistics are hourly sums;
 the power statistics keep the hourly maximum of the meter's own interval reads, so a
 5-minute peak is not lost.
+
+Usage history dates and the summary sensors use midnight-to-midnight AEST market
+days. Today's AEST day is excluded from the latest complete day, month-to-date
+and last-30-days usage totals. During daylight saving in NSW, VIC, TAS and ACT,
+an AEST day runs from 01:00 to 01:00 local time; in SA it runs from 00:30 to
+00:30. Compare the same day boundaries when reconciling usage with local-day
+Energy dashboard totals.
 
 ### Billing
 
