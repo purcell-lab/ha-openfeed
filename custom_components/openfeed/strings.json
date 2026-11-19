@@ -83,7 +83,8 @@
         },
         "data_description": {
           "sidebar_dashboard": "A read-only dashboard built from this integration's entities and statistics. It updates with each release.",
-          "bank_transactions": "Needs banking shared. Adds money in, money out, interest and fee totals for each bank account. Only totals are kept; descriptions, payees and references are never stored."
+          "bank_transactions": "Needs banking shared. Adds money in, money out, interest and fee totals for each bank account. Only totals are kept; descriptions, payees and references are never stored.",
+          "backfill_days": "How far back the first load (and each restart) asks for. 730 days is the 2 years the Consumer Data Right covers. openfeed may return more than asked; everything returned is imported."
         }
       }
     }
