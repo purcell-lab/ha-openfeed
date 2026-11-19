@@ -102,19 +102,16 @@ def statistic_id(key: str, series: str) -> str:
 _COVERAGE_START = datetime(2000, 1, 1, tzinfo=UTC)
 
 
-async def async_daily_coverage(
-    hass: HomeAssistant, stat_ids: list[str]
-) -> tuple[int, date | None, date | None]:
-    """Days with at least one hourly row in any of stat_ids, and the oldest and latest.
+async def async_statistics_days(hass: HomeAssistant, stat_ids: list[str]) -> set[date]:
+    """AEST days with at least one hourly row already stored for any of stat_ids.
 
-    Reads the long-term statistics, so it counts everything ever imported,
-    not only what the latest refresh returned. Days are AEST (UTC+10) market
-    days, like every other daily figure in the integration.
+    Reads what the database holds now and never waits for the recorder
+    queue: during Home Assistant start-up the recorder does not commit until
+    start-up has finished, so waiting here from a config entry setup would
+    hold start-up until its timeout. Rows still queued are not counted;
+    callers add the days they have just imported themselves.
     """
-    instance = get_instance(hass)
-    # Let the import just queued reach the database first.
-    await instance.async_block_till_done()
-    rows = await instance.async_add_executor_job(
+    rows = await get_instance(hass).async_add_executor_job(
         statistics_during_period,
         hass,
         _COVERAGE_START,
@@ -124,14 +121,11 @@ async def async_daily_coverage(
         None,
         {"change"},
     )
-    days = {
+    return {
         datetime.fromtimestamp(float(row["start"]), AEST).date()
         for series in rows.values()
         for row in series
     }
-    if not days:
-        return 0, None, None
-    return len(days), min(days), max(days)
 
 
 async def _sum_before(hass: HomeAssistant, stat_id: str, first_hour: datetime) -> float:

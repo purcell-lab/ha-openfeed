@@ -53,7 +53,7 @@ from .der import DerSummary, summarise_der
 from .statistics import (
     account_key,
     async_clear,
-    async_daily_coverage,
+    async_statistics_days,
     async_import_meter,
     async_import_money,
     async_import_power,
@@ -576,19 +576,41 @@ class OpenfeedCoordinator(DataUpdateCoordinator[OpenfeedData]):
             label = f"openfeed {meter_label(md.meter).lower()}"
             await async_import_power(self.hass, md.key, label, summary.hourly_power)
         if summary.hourly:
-            await self._update_stats_coverage(md)
+            imported = {
+                d for series in (CONSUMPTION, EXPORT) for d in summary.daily.get(series, {})
+            }
+            # Read the stored days in the background: the refresh (and so
+            # Home Assistant start-up) must not wait on the recorder.
+            self.config_entry.async_create_background_task(
+                self.hass,
+                self._update_stats_coverage(md, imported),
+                f"openfeed statistics coverage {md.key}",
+            )
         self._backfilled.add(md.meter["meterId"])
         return summary
 
-    async def _update_stats_coverage(self, md: MeterData) -> None:
-        """Count the days of usage held in long-term statistics for a meter."""
+    async def _update_stats_coverage(self, md: MeterData, imported: set[date]) -> None:
+        """Count the days of usage held in long-term statistics for a meter.
+
+        The stored days are read without waiting for the recorder, and the
+        days this refresh imported are added, because those may still be
+        queued. Entities are updated when the count is ready.
+        """
+        meter_id = md.meter["meterId"]
         ids = [statistic_id(md.key, s) for s in (CONSUMPTION, EXPORT)]
         try:
-            coverage = await async_daily_coverage(self.hass, ids)
+            days = await async_statistics_days(self.hass, ids)
         except Exception as err:  # noqa: BLE001 - a recorder hiccup must not fail the refresh
             _LOGGER.debug("openfeed could not read statistics coverage: %s", err)
+            days = set()
+        days |= imported
+        if not days:
             return
-        self._stats_coverage[md.meter["meterId"]] = coverage
+        coverage = (len(days), min(days), max(days))
+        self._stats_coverage[meter_id] = coverage
+        if cached := self._usage_cache.get(meter_id):
+            cached.stats_days, cached.stats_oldest, cached.stats_latest = coverage
+        self.async_update_listeners()
 
 
 def _apply_balance(item: EnergyAccountData | BankingAccountData, result: Any) -> None:

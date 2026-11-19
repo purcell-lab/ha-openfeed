@@ -853,14 +853,45 @@ async def test_usage_history_counts_long_term_statistics(hass, entry, aioclient_
     old_day = dt_util.now(AEST).date() - timedelta(days=500)
     old_hour = datetime.combine(old_day, dtime(1), AEST).astimezone(UTC)
     await async_import_meter(hass, md.key, "openfeed test", {"consumption": {old_hour: 1.0}})
+    # That history is already stored, as it would be from an earlier run.
+    await async_wait_recording_done(hass)
     # Force the next refresh to re-read usage, which updates the coverage.
     for cached in coordinator._usage_cache.values():
         cached.usage_fetched_at = dt_util.utcnow() - timedelta(hours=4)
     await coordinator.async_refresh()
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     history = hass.states.get(f"sensor.meter_{NMI.lower()}_usage_history")
     assert int(history.state) == 3
     assert history.attributes["oldest"] == old_day.isoformat()
     assert history.attributes["source"] == "statistics"
     assert history.attributes["summary_days"] == 2
+
+
+
+async def test_setup_does_not_wait_for_the_recorder(hass, entry, aioclient_mock) -> None:
+    """During start-up the recorder does not commit until start-up ends.
+
+    Setup must not wait for it, or Home Assistant start-up waits on openfeed
+    until its timeout (v0.1.13).
+    """
+    import asyncio
+    from unittest.mock import patch
+
+    from homeassistant.components.recorder.core import Recorder
+
+    never = asyncio.get_running_loop().create_future()
+
+    async def stuck(self):  # what async_block_till_done does before start-up ends
+        await never
+
+    _mock_api(aioclient_mock)
+    with patch.object(Recorder, "async_block_till_done", stuck):
+        async with asyncio.timeout(20):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done(wait_background_tasks=True)
+    assert entry.state is ConfigEntryState.LOADED
+    history = hass.states.get(f"sensor.meter_{NMI.lower()}_usage_history")
+    # The two days just imported count even before the recorder commits them.
+    assert int(history.state) == 2
+    assert history.attributes["source"] == "statistics"
