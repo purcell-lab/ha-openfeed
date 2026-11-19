@@ -529,6 +529,14 @@ async def test_sidebar_dashboard(hass, entry, aioclient_mock, hass_ws_client) ->
                 assert NMI not in row["name"]
     power = next(c for c in cards if c["title"].startswith("Grid power"))
     assert power["entities"][0]["entity"] == f"openfeed:nmi_{NMI.lower()}_consumption_power"
+    # Two-year charts cover every day the CDR shares.
+    energy_2y = next(c for c in cards if c["title"].startswith("Monthly grid energy, 2 years"))
+    assert energy_2y["period"] == "month" and energy_2y["days_to_show"] == 730
+    assert [e["entity"] for e in energy_2y["entities"]] == [
+        f"openfeed:nmi_{NMI.lower()}_consumption", f"openfeed:nmi_{NMI.lower()}_export"]
+    power_2y = next(c for c in cards if c["title"].startswith("Weekly grid power"))
+    assert power_2y["period"] == "week" and power_2y["days_to_show"] == 730
+    assert power_2y["stat_types"] == ["mean", "max"]
 
     # Switching the option off removes the panel on reload.
     hass.config_entries.async_update_entry(entry, options={"sidebar_dashboard": False})

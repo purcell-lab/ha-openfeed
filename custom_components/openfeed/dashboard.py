@@ -20,6 +20,8 @@ from .statistics import account_key, statistic_id
 _LOGGER = logging.getLogger(__name__)
 
 TITLE = "Energy data"
+# The CDR shares up to 2 years of usage; the long-range charts show all of it.
+TWO_YEARS_DAYS = 730
 ICON = "mdi:transmission-tower"
 
 
@@ -164,6 +166,22 @@ def _meter_cards(hass: HomeAssistant, entry: Any, meter: Any) -> list[dict]:
                 ],
             }
         )
+    if energy_series:
+        cards.append(
+            {
+                "type": "statistics-graph",
+                "title": "Monthly grid energy, 2 years (meter reads)",
+                "period": "month",
+                "days_to_show": TWO_YEARS_DAYS,
+                "chart_type": "bar",
+                "stat_types": ["change"],
+                "entities": [
+                    {"entity": statistic_id(key, s), "name": name}
+                    for s, name in (("consumption", "Import"), ("export", "Export"))
+                    if s in energy_series
+                ],
+            }
+        )
     if power_series:
         power = [
             (s, name)
@@ -194,6 +212,20 @@ def _meter_cards(hass: HomeAssistant, entry: Any, meter: Any) -> list[dict]:
                 "stat_types": ["max"],
                 "entities": [
                     {"entity": statistic_id(key, f"{s}_power"), "name": f"Peak {name}"}
+                    for s, name in power
+                ],
+            }
+        )
+        cards.append(
+            {
+                "type": "statistics-graph",
+                "title": "Weekly grid power, mean and 5-minute peak (2 years)",
+                "period": "week",
+                "days_to_show": TWO_YEARS_DAYS,
+                "chart_type": "line",
+                "stat_types": ["mean", "max"],
+                "entities": [
+                    {"entity": statistic_id(key, f"{s}_power"), "name": f"Grid {name}"}
                     for s, name in power
                 ],
             }
